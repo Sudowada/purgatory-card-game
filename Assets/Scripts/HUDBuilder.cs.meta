@@ -1,0 +1,14 @@
+fileFormatVersion: 2
+guid: 16804f232fcce754587ebe23f213368a
+MonoImporter:
+  externalObjects: {}
+  serializedVersion: 2
+  defaultReferences:
+  - headerFont: {fileID: 11400000, guid: 1138f2db2345ab141942b6f5c0571f72, type: 2}
+  - bodyFont: {fileID: 11400000, guid: 1138f2db2345ab141942b6f5c0571f72, type: 2}
+  - scoringCellMaterial: {fileID: 2100000, guid: c5ce22866f8dadd4da3460ea6aac4548, type: 2}
+  executionOrder: 0
+  icon: {instanceID: 0}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 

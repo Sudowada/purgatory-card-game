@@ -1,0 +1,30 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0627493d5cce90745ab3d28cfad91a98, type: 3}
+  m_Name: Note_Bram_Day05
+  m_EditorClassIdentifier: Assembly-CSharp::NoteData
+  noteID: bram_day05
+  author: 0
+  category: 0
+  day: 5
+  noteText: "Found another hidden compartment.\n\n                   Previous occupant
+    left dozens of notes.\n                   Most appear incoherent.\n\n                  
+    I will catalogue them properly."
+  sketchImage: {fileID: 0}
+  miraStage: 0
+  relatedNoteIDs:
+  - 
+  relicID: 
+  unlockedByDefault: 0
+  unlockEventID: 
+  isUnlocked: 0
+  hasBeenRead: 0

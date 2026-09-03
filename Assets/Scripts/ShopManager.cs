@@ -1,0 +1,399 @@
+using System.Linq;
+using System.Collections.Generic;
+using UnityEngine;
+
+public enum CardRarity { Common, Uncommon, Rare }
+
+[System.Serializable]
+public class ShopCard
+{
+    public int value;
+    public string suit;
+    public CardRarity rarity;
+    public int cost;
+    public string displayName;
+
+    private static string GetDisplayValue(int v) => v switch
+    {
+        1  => "A",
+        11 => "J",
+        12 => "Q",
+        13 => "K",
+        _  => v.ToString()
+    };
+
+    public ShopCard(int v, string s, CardRarity r)
+    {
+        value       = v;
+        suit        = s;
+        rarity      = r;
+        displayName = GetDisplayValue(v) + s;
+        cost        = r switch
+        {
+            CardRarity.Rare     => 7,
+            CardRarity.Uncommon => 4,
+            _                   => 2
+        };
+    }
+}
+
+/// <summary>
+/// Manages shop inventory, gold, deck pool, and purchases.
+/// Attach to the same GameObject as GameManager.
+/// </summary>
+public class ShopManager : MonoBehaviour
+{
+    public static ShopManager Instance { get; private set; }
+
+    private readonly string[] suits = { "♠", "♥", "♦", "♣" };
+
+    [Header("Gold")]
+    public int   playerGold        = 0;
+    public float rareChanceModifier = 0f;
+    public List<string> collectibles   = new List<string>();
+    public int          bonusStartGold = 0;
+    public int baseGoldPerRound = 3;
+    public int burnCost         = 4;
+
+    // Current shop offerings
+    [HideInInspector] public Relic      offeredRelic;
+    [HideInInspector] public int        offeredRelicCost;
+    [HideInInspector] public ShopCard   offeredCard;
+    [HideInInspector] public Consumable offeredConsumable;
+
+    // Full deck pool
+    private List<(int value, string suit)> deckPool = new List<(int, string)>();
+
+    void Awake()
+    {
+        if (Instance == null) Instance = this;
+        else Destroy(gameObject);
+        InitializeDeckPool();
+    }
+
+    // ── Deck Pool ─────────────────────────────────────────────────────────────
+
+    private void InitializeDeckPool()
+    {
+        deckPool.Clear();
+        foreach (string s in suits)
+            for (int v = 1; v <= 13; v++)
+                deckPool.Add((v, s));
+    }
+
+    public List<(int value, string suit)> GetShuffledDeck()
+    {
+        var shuffled = new List<(int, string)>(deckPool);
+        for (int i = shuffled.Count - 1; i > 0; i--)
+        {
+            int j = Random.Range(0, i + 1);
+            (shuffled[i], shuffled[j]) = (shuffled[j], shuffled[i]);
+        }
+        return shuffled;
+    }
+
+    public void AddCardToDeckPool(int value, string suit) => deckPool.Add((value, suit));
+
+    public void BurnCardFromDeckPool(int value, string suit)
+    {
+        int idx = deckPool.FindIndex(c => c.value == value && c.suit == suit);
+        if (idx >= 0) deckPool.RemoveAt(idx);
+    }
+
+    // ── Gold ──────────────────────────────────────────────────────────────────
+
+    public void ApplyRunStartBonuses()
+    {
+        playerGold += bonusStartGold;
+        if (bonusStartGold > 0)
+            Debug.Log($"[ShopManager] Applied {bonusStartGold} bonus starting gold.");
+    }
+
+    public void AwardGold(int scoreThisRound, int threshold)
+    {
+        int excess  = Mathf.Max(0, scoreThisRound - threshold);
+        int bonus   = excess / 10;
+
+        // Interest: +1 gold per 5 held, applied before adding base
+        int interest = playerGold / 5;
+
+        int awarded = baseGoldPerRound + bonus + interest;
+        playerGold += awarded;
+        Debug.Log($"[ShopManager] Gold: +{awarded} ({baseGoldPerRound} base + {bonus} score bonus + {interest} interest). Total: {playerGold}");
+    }
+
+    public bool SpendGold(int amount)
+    {
+        if (playerGold < amount) return false;
+        playerGold -= amount;
+        return true;
+    }
+
+    public void AddGold(int amount)    => playerGold = Mathf.Max(0, playerGold + amount);
+    public void RemoveGold(int amount) => playerGold = Mathf.Max(0, playerGold - amount);
+
+    public void AddCollectible(string id)
+    {
+        if (!collectibles.Contains(id))
+        {
+            collectibles.Add(id);
+            CollectiblesTable.Instance?.Refresh();
+        }
+    }
+
+    public bool HasCollectible(string id) => collectibles.Contains(id);
+
+    // ── Old Shop Generation (UI panel shop) ───────────────────────────────────
+
+    public void GenerateShop(int roundNumber)
+    {
+        offeredRelic      = GenerateRelic(roundNumber);
+        offeredCard       = GenerateCard(roundNumber);
+        offeredConsumable = GenerateConsumable();
+    }
+
+    // ── Unlock Conditions ─────────────────────────────────────────────────────
+
+    private static readonly List<(RelicType type, string requirement, System.Func<int, bool> check)>
+        _unlockConditions = new List<(RelicType, string, System.Func<int, bool>)>
+    {
+        (RelicType.TimeEngine,       "Reach 500 total score",
+            _ => RunStats.Instance != null && RunStats.Instance.TotalScore >= 500),
+        (RelicType.GrindCore,        "Reach 1000 total score",
+            _ => RunStats.Instance != null && RunStats.Instance.TotalScore >= 1000),
+        (RelicType.HighValueInvest,  "Reach 1500 total score",
+            _ => RunStats.Instance != null && RunStats.Instance.TotalScore >= 1500),
+        (RelicType.ComboBank,        "Survive 3 rounds",
+            _ => RunStats.Instance != null && RunStats.Instance.RoundsSurvived >= 3),
+        (RelicType.TurnInvestor,     "Survive 5 rounds",
+            _ => RunStats.Instance != null && RunStats.Instance.RoundsSurvived >= 5),
+        (RelicType.GlassCannon,      "Survive 6 rounds",
+            _ => RunStats.Instance != null && RunStats.Instance.RoundsSurvived >= 6),
+        (RelicType.Purifier,         "Own 2 other relics",
+            _ => RelicSystem.Instance != null && RelicSystem.Instance.activeRelics.Count >= 2),
+        (RelicType.NecromancyRelic,  "Own 3 other relics",
+            _ => RelicSystem.Instance != null && RelicSystem.Instance.activeRelics.Count >= 3),
+        (RelicType.AnchorCard,       "Own 4 other relics",
+            _ => RelicSystem.Instance != null && RelicSystem.Instance.activeRelics.Count >= 4),
+        (RelicType.CardCycler,       "Play 5 hands",
+            _ => RunStats.Instance != null && RunStats.Instance.HandsPlayed >= 5),
+        (RelicType.DrawReactor,      "Play 10 hands",
+            _ => RunStats.Instance != null && RunStats.Instance.HandsPlayed >= 10),
+        (RelicType.InstantRot,       "Survive 4 rounds and own 2 relics",
+            _ => RunStats.Instance != null && RunStats.Instance.RoundsSurvived >= 4
+              && RelicSystem.Instance != null && RelicSystem.Instance.activeRelics.Count >= 2),
+        (RelicType.PlagueAll,        "Survive 7 rounds",
+            _ => RunStats.Instance != null && RunStats.Instance.RoundsSurvived >= 7),
+    };
+
+    public static bool IsRelicUnlocked(RelicType type, int round)
+    {
+        foreach (var (t, _, check) in _unlockConditions)
+            if (t == type) return check(round);
+        return true;
+    }
+
+    public static string GetUnlockRequirement(RelicType type)
+    {
+        foreach (var (t, req, _) in _unlockConditions)
+            if (t == type) return req;
+        return null;
+    }
+
+    private Relic GenerateRelic(int round)
+    {
+        var allTypes = new List<RelicType>((RelicType[])System.Enum.GetValues(typeof(RelicType)));
+
+        if (RelicSystem.Instance != null)
+            allTypes.RemoveAll(t => RelicSystem.Instance.HasRelic(t));
+
+        allTypes.RemoveAll(t => !IsRelicUnlocked(t, round));
+
+        if (allTypes.Count == 0)
+        {
+            allTypes = new List<RelicType>((RelicType[])System.Enum.GetValues(typeof(RelicType)));
+            if (RelicSystem.Instance != null)
+                allTypes.RemoveAll(t => RelicSystem.Instance.HasRelic(t));
+        }
+
+        if (allTypes.Count == 0) return null;
+
+        RelicType picked;
+        if (rareChanceModifier > 0f && Random.value < rareChanceModifier)
+        {
+            var premium = allTypes.Where(t => GetUnlockRequirement(t) != null).ToList();
+            picked = premium.Count > 0
+                ? premium[Random.Range(0, premium.Count)]
+                : allTypes[Random.Range(0, allTypes.Count)];
+        }
+        else if (rareChanceModifier < 0f && Random.value < -rareChanceModifier)
+        {
+            var common = allTypes.Where(t => GetUnlockRequirement(t) == null).ToList();
+            picked = common.Count > 0
+                ? common[Random.Range(0, common.Count)]
+                : allTypes[Random.Range(0, allTypes.Count)];
+        }
+        else
+        {
+            picked = allTypes[Random.Range(0, allTypes.Count)];
+        }
+
+        offeredRelicCost = 5 + (round / 2);
+        return RelicSystem.MakeRelicStatic(picked);
+    }
+
+    private ShopCard GenerateCard(int round)
+    {
+        float rareChance     = Mathf.Clamp01(round * 0.05f + rareChanceModifier);
+        float uncommonChance = Mathf.Clamp01(0.15f + round * 0.05f);
+
+        CardRarity rarity;
+        float roll = Random.value;
+        if (roll < rareChance)          rarity = CardRarity.Rare;
+        else if (roll < uncommonChance) rarity = CardRarity.Uncommon;
+        else                            rarity = CardRarity.Common;
+
+        int value = rarity switch
+        {
+            CardRarity.Rare     => new int[] { 1, 11, 12, 13 }[Random.Range(0, 4)],
+            CardRarity.Uncommon => Random.Range(6, 11),
+            _                   => Random.Range(2, 6)
+        };
+
+        string suit = suits[Random.Range(0, suits.Length)];
+        return new ShopCard(value, suit, rarity);
+    }
+
+    private Consumable GenerateConsumable()
+    {
+        var allTypes = ConsumableSystem.AllTypes();
+        return ConsumableSystem.MakeConsumable(allTypes[Random.Range(0, allTypes.Count)]);
+    }
+
+    // ── Purchases ─────────────────────────────────────────────────────────────
+
+    public bool BuyRelic()
+    {
+        if (offeredRelic == null || !SpendGold(offeredRelicCost)) return false;
+        RelicSystem.Instance?.AddRelic(offeredRelic.type);
+        offeredRelic = null;
+        return true;
+    }
+
+    public bool BuyCard()
+    {
+        if (offeredCard == null || !SpendGold(offeredCard.cost)) return false;
+        AddCardToDeckPool(offeredCard.value, offeredCard.suit);
+        offeredCard = null;
+        return true;
+    }
+
+    public bool BuyConsumable()
+    {
+        if (offeredConsumable == null || !SpendGold(offeredConsumable.cost)) return false;
+        ConsumableSystem.Instance?.UseConsumable(offeredConsumable.type);
+        offeredConsumable = null;
+        return true;
+    }
+
+    public bool BurnCard(Card card)
+    {
+        if (!SpendGold(burnCost)) return false;
+        BurnCardFromDeckPool(card.cardValue, card.cardSuit);
+        return true;
+    }
+
+    // ── World Shop (3D exploration room window) ───────────────────────────────
+
+    /// <summary>
+    /// Called by ShopWindowInteractable to generate the world shop relic pool.
+    /// Returns relics and their costs, weighted by current stage.
+    /// </summary>
+    public (List<Relic> relics, List<int> costs) GenerateWorldShop()
+    {
+        int stage = GameManager.Instance != null
+            ? ((GameManager.Instance.CurrentRoundNumber - 1) / 3) + 1
+            : 1;
+        stage = Mathf.Clamp(stage, 1, 8);
+
+        int relicCount = GetWorldRelicCount(stage);
+
+        var relics    = new List<Relic>();
+        var costs     = new List<int>();
+        var usedTypes = new HashSet<RelicType>();
+
+        // Exclude already owned relics
+        if (RelicSystem.Instance != null)
+            foreach (var r in RelicSystem.Instance.activeRelics)
+                usedTypes.Add(r.type);
+
+        for (int i = 0; i < relicCount; i++)
+        {
+            RelicType type  = PickWeightedRelic(stage, usedTypes);
+            usedTypes.Add(type);
+            var relic = RelicSystem.MakeRelicStatic(type);
+            relics.Add(relic);
+            costs.Add(GetWorldRelicCost(relic.category, stage));
+        }
+
+        return (relics, costs);
+    }
+
+    private int GetWorldRelicCount(int stage) => stage switch
+    {
+        1 or 2 => 2,
+        3 or 4 => 3,
+        _      => 4
+    };
+
+    private RelicType PickWeightedRelic(int stage, HashSet<RelicType> exclude)
+    {
+        float wCommon   = Mathf.Lerp(0.70f, 0.00f, (stage - 1) / 7f);
+        float wUncommon = 0.30f;
+        float wRare     = Mathf.Lerp(0.00f, 0.70f, (stage - 1) / 7f);
+
+        float         roll      = Random.value;
+        RelicCategory targetCat;
+
+        if (roll < wCommon)
+            targetCat = (RelicCategory)Random.Range(0, 2);
+        else if (roll < wCommon + wUncommon)
+            targetCat = (RelicCategory)Random.Range(2, 4);
+        else
+            targetCat = (RelicCategory)Random.Range(4, 6);
+
+        var allTypes   = System.Enum.GetValues(typeof(RelicType));
+        var candidates = new List<RelicType>();
+
+        foreach (RelicType t in allTypes)
+        {
+            if (exclude.Contains(t)) continue;
+            var relic = RelicSystem.MakeRelicStatic(t);
+            if (relic.category == targetCat) candidates.Add(t);
+        }
+
+        // Fallback: any non-excluded relic
+        if (candidates.Count == 0)
+            foreach (RelicType t in allTypes)
+                if (!exclude.Contains(t)) candidates.Add(t);
+
+        if (candidates.Count == 0) return RelicType.FourthHand;
+
+        return candidates[Random.Range(0, candidates.Count)];
+    }
+
+    private int GetWorldRelicCost(RelicCategory cat, int stage)
+    {
+        int baseCost = cat switch
+        {
+            RelicCategory.RuleChanger       => 20,
+            RelicCategory.DecayManipulation => 20,
+            RelicCategory.ComboEngine       => 30,
+            RelicCategory.ScalingMultiplier => 35,
+            RelicCategory.CardManipulation  => 30,
+            RelicCategory.RiskChallenge     => 50,
+            _                               => 25
+        };
+        return baseCost + (stage - 1) * 3;
+    }
+}

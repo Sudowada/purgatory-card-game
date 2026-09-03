@@ -1,0 +1,22 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1f4a748c543f6c543a93dada08153d5f, type: 3}
+  m_Name: Relic_ShadowedCrown
+  m_EditorClassIdentifier: Assembly-CSharp::RelicModifierData
+  relicID: relic_shadowed_crown
+  relicName: The Shadowed Crown
+  description: The crown of a long forgotten king. Lost is its former glory, but
+    slight hums reveal signs of energy still.
+  icon: {fileID: 0}
+  deckModifier: 1
+  startingGoldBonus: 0
+  startingJokerID: 

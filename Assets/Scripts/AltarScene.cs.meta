@@ -1,0 +1,12 @@
+fileFormatVersion: 2
+guid: ec6d8af477bcb0c488ac8fff99e24944
+MonoImporter:
+  externalObjects: {}
+  serializedVersion: 2
+  defaultReferences:
+  - altarFont: {fileID: 11400000, guid: 9616afe76e568c3469fcc1de723a1d23, type: 2}
+  executionOrder: 0
+  icon: {instanceID: 0}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
