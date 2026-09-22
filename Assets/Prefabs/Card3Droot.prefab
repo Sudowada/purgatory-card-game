@@ -93,48 +93,51 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 62d3ee2fffd167146a7b11913435f467, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Card3DInteractable
-  hoverLift: 0.0016
-  selectedLift: 0.002
-  hoverTiltX: -8
-  proximityRadius: 220
-  proximitySmoothSpeed: 10
-  fullyHoveredThreshold: 0.85
-  raycastMaxDistance: 100
-  raycastMask:
-    serializedVersion: 2
-    m_Bits: 4294967295
-  enableDynamicHoverTilt: 1
-  dynamicTiltAmount: 4
-  dynamicTiltSmoothSpeed: 10
-  enableScalePop: 1
-  scaleOnHover: 1.08
-  scaleOnSelect: 1.15
-  scaleTransitionSpeed: 12
-  moveSpeed: 14
-  rotateSpeed: 14
-  allowDragging: 1
-  dragPlaneHeight: 0.75
-  dragHeightOffset: 0.03
+  visualRoot: {fileID: 2853752208219291028}
+  interactionCamera: {fileID: 0}
+  horizontalHandHolder: {fileID: 0}
+  offeringController: {fileID: 0}
+  handHolder: {fileID: 0}
+  handMoveSpeed: 28
+  handRotateSpeed: 28
+  hoverScreenRadius: 120
+  hoverIntensitySpeed: 14
+  enableIdle: 1
+  idleLiftAmount: 0.0008
+  idleDurationMin: 1.8
+  idleDurationMax: 2.6
+  idleStartDelayMin: 0
+  idleStartDelayMax: 1.2
+  hoverLocalOffset: {x: 0, y: 0.008, z: 0}
+  hoverLocalRotation: {x: -6, y: 0, z: 0}
+  hoverInDuration: 0.06
+  hoverOutDuration: 0.08
+  hoverInEase: 9
+  hoverOutEase: 6
+  hoverAudioSource: {fileID: 0}
+  hoverSound: {fileID: 0}
+  hoverVolume: 0.7
+  minHoverPitch: 0.97
+  maxHoverPitch: 1.03
+  hoverBrightnessRenderers:
+  - {fileID: 7334699442717783532}
+  hoverBrightnessMultiplier: 1.12
+  hoverEmissionStrength: 0.12
+  hoverBrightnessSpeed: 18
+  allowClickSelection: 1
   clickTimeThreshold: 0.2
-  dragDistanceThreshold: 0.015
-  dragStartPunchAmount: 0.06
-  dragStartPunchAngle: 6
-  dragStartPunchDuration: 0.18
-  enableIdleSway: 1
-  idleSwayAmount: 0.006
-  idleTiltAmount: 1
-  handIndex: 0
-  hoverPunchAngle: 4
-  hoverPunchDuration: 0.15
-  selectPunchAmount: 0.015
-  selectPunchDuration: 0.15
-  enableDragLean: 1
-  dragLeanAmount: 8
-  dragLeanSmoothSpeed: 15
-  dragLeanMaxAngle: 35
-  swapRotationAngle: 25
+  dragPixelThreshold: 6
+  dragLift: 0.035
+  dragTowardCamera: 0.03
+  altarAnticipationDuration: 0.035
+  altarAnticipationTowardCamera: 0.018
+  altarAnticipationScale: 1.045
+  altarFlightDuration: 0.13
+  altarFlightOvershoot: 1.22
+  altarPreviewScale: 1.025
+  altarReturnToHandSpeed: 24
+  swapPunchDistance: 0.012
   swapPunchDuration: 0.15
-  swapVibrato: 5
 --- !u!114 &2149775156299717330
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1565,3 +1568,8 @@ MonoBehaviour:
   CardSelectedEvent:
     m_PersistentCalls:
       m_Calls: []
+--- !u!23 &7334699442717783532 stripped
+MeshRenderer:
+  m_CorrespondingSourceObject: {fileID: 5033405585667272595, guid: 995e18948cee594438d49e2b31668c46, type: 3}
+  m_PrefabInstance: {fileID: 2310392779896314495}
+  m_PrefabAsset: {fileID: 0}

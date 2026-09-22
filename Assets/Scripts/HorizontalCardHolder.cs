@@ -51,6 +51,9 @@ public class HorizontalCardHolder : MonoBehaviour
     [Tooltip("Each successive card sits slightly further forward than the last (along this holder's forward axis) — stops overlapping cards from clipping/z-fighting into each other.")]
     [SerializeField] private float cardDepthStagger = 0.013f;
 
+    [Tooltip("Tiny vertical layering between overlapping cards. This gives every card a consistent physical top/bottom order so idle cards do not phase through each other.")]
+    [SerializeField] private float cardVerticalLayerStep = 0.0012f;
+
     [Header("Dealt-Hand Jitter — small per-slot randomness so cards look tossed down, not machine-placed")]
     [Tooltip("Max random position offset (meters) applied per hand slot, sideways and forward/back.")]
     [SerializeField] private float jitterPositionAmount = 0.006f;
@@ -87,6 +90,12 @@ public class HorizontalCardHolder : MonoBehaviour
     }
 
     private readonly List<CardSlot> _slots = new List<CardSlot>();
+
+    // Cards staged above the altar are temporarily removed from _slots/cards,
+    // but their complete slot data is stored here so Undo can restore them.
+    private readonly Dictionary<Card3DInteractable, CardSlot> _offeredSlots =
+        new Dictionary<Card3DInteractable, CardSlot>();
+
     private int _draggingIndex = -1;
 
     void Start()
@@ -190,7 +199,7 @@ public class HorizontalCardHolder : MonoBehaviour
         int currentlyDraggingIndex = -1;
         for (int i = 0; i < _slots.Count; i++)
         {
-            if (_slots[i].interactable != null && _slots[i].interactable.IsDragging)
+            if (_slots[i].interactable != null && _slots[i].interactable.IsDraggingInHand)
             {
                 currentlyDraggingIndex = i;
                 break;
@@ -284,6 +293,80 @@ public class HorizontalCardHolder : MonoBehaviour
         }
     }
 
+
+    // ── Offering / altar integration ──────────────────────────────────────────
+
+    /// <summary>
+    /// Temporarily removes a physical card from the hand while it is staged
+    /// above the altar. Returns its previous hand index for Undo.
+    /// </summary>
+    public int RemoveForOffering(Card3DInteractable interactable)
+    {
+        if (interactable == null)
+            return -1;
+
+        int index = _slots.FindIndex(
+            slot => slot.interactable == interactable
+        );
+
+        if (index < 0)
+            return -1;
+
+        CardSlot slot = _slots[index];
+
+        _slots.RemoveAt(index);
+
+        if (index >= 0 && index < cards.Count)
+            cards.RemoveAt(index);
+        else
+            cards.Remove(slot.card);
+
+        _offeredSlots[interactable] = slot;
+
+        if (slot.hoverAnchor != null)
+            slot.hoverAnchor.gameObject.SetActive(false);
+
+        _draggingIndex = -1;
+        RefanAll();
+
+        return index;
+    }
+
+    /// <summary>
+    /// Returns an offered card to the hand, normally to the slot it occupied
+    /// before being staged.
+    /// </summary>
+    public void ReturnFromOffering(
+        Card3DInteractable interactable,
+        int preferredIndex)
+    {
+        if (interactable == null)
+            return;
+
+        if (!_offeredSlots.TryGetValue(interactable, out CardSlot slot))
+        {
+            Debug.LogWarning(
+                "[HorizontalCardHolder] ReturnFromOffering could not find the stored card slot."
+            );
+            return;
+        }
+
+        int index =
+            Mathf.Clamp(preferredIndex, 0, _slots.Count);
+
+        _slots.Insert(index, slot);
+        cards.Insert(index, slot.card);
+
+        _offeredSlots.Remove(interactable);
+
+        if (slot.hoverAnchor != null)
+            slot.hoverAnchor.gameObject.SetActive(true);
+
+        interactable.ReturnToHandState();
+
+        RefanAll();
+    }
+
     /// <summary>
     /// Converts a small local offset (in meters, relative to this holder's
     /// own orientation) into a world position WITHOUT applying any inherited
@@ -334,7 +417,7 @@ public class HorizontalCardHolder : MonoBehaviour
 
         for (int i = 0; i < _slots.Count; i++)
         {
-            if (_slots[i].interactable != null && _slots[i].interactable.IsDragging)
+            if (_slots[i].interactable != null && _slots[i].interactable.IsDraggingInHand)
             {
                 activeIndex = i;
                 break;
@@ -363,6 +446,10 @@ public class HorizontalCardHolder : MonoBehaviour
             var interactable = _slots[i].interactable;
             if (interactable == null) continue;
 
+            // Exactly one primary hover card. This is what makes the riffle
+            // sound fire once when the cursor moves A -> B -> C.
+            interactable.SetPrimaryHover(i == activeIndex);
+
             if (activeIndex == -1)
             {
                 interactable.SetWaveEffect(Vector3.zero, 0f);
@@ -385,6 +472,17 @@ public class HorizontalCardHolder : MonoBehaviour
 
             interactable.SetWaveEffect(offset, waveScaleBoost * influence);
         }
+    }
+
+    /// <summary>
+    /// Neutral card rotation for a card being held/dragged.
+    /// Uses the same serialized Card Rest Euler as the hand, but removes the
+    /// per-slot fan angle and jitter. This keeps the card visually "straight"
+    /// without introducing a camera-axis 90-degree flip.
+    /// </summary>
+    public Quaternion GetStraightHandRotation()
+    {
+        return transform.rotation * Quaternion.Euler(cardRestEuler);
     }
 
     // ── Fan math ──────────────────────────────────────────────────────────────
@@ -433,7 +531,7 @@ public class HorizontalCardHolder : MonoBehaviour
 
         Vector3 pos = new Vector3(
             xOffset + pivotDX + jitterX,
-            cardHeightAboveTable + rise,
+            cardHeightAboveTable + rise + index * cardVerticalLayerStep,
             index * cardDepthStagger + pivotDZ + jitterZ);
 
         Quaternion rot = Quaternion.Euler(cardRestEuler) * Quaternion.Euler(0f, yRot + jitterRot, 0f);

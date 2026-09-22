@@ -1,522 +1,1525 @@
+using DG.Tweening;
+using System;
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
-using DG.Tweening;
 
-/// <summary>
-/// Basic 3D card interaction for the new physical card prefab.
-///
-/// Put this script on Card3DRoot.
-/// Card3DRoot also needs:
-/// - BoxCollider
-/// - Card3DView
-///
-/// IMPORTANT: this uses MANUAL per-frame raycasting via the new Input
-/// System instead of Unity's legacy OnMouseEnter/OnMouseDown/OnMouseDrag/
-/// OnMouseUp/OnMouseExit magic methods. Those legacy methods silently do
-/// nothing when a project's Active Input Handling is set to "Input System
-/// Package" only (rather than "Both") — which is exactly this project's
-/// setting.
-///
-/// HOVER MODEL: hover is a continuous 0-1 "proximity" value based on
-/// screen-space distance from the cursor to the card's STABLE resting
-/// position (basePosition — never moves while hovering), not a binary
-/// raycast hit/miss on the live, moving card. As you approach, the card
-/// eases upward smoothly; only exact clicks still need a precise collider
-/// raycast (handled separately, just to know which card was clicked).
-/// Using the stable base position instead of the live transform is what
-/// prevents the old feedback-loop jiggle — the reference point the
-/// proximity is measured against never moves, so there's nothing for the
-/// motion to destabilize.
-///
-/// This handles:
-/// - proximity-based hover rise + tilt + scale pop
-/// - click selection
-/// - optional dragging across a collider surface, like your table
-/// - idle sway + hover/select punch feel (ported from CardVisual.cs)
-///
-/// This does NOT replace your old Card script.
-/// It uses Card3DView to toggle the existing source Card selected state.
-/// </summary>
-[RequireComponent(typeof(Collider))]
+public enum CardPhysicalState
+{
+    InHand,
+    Dragging,
+    Offered,
+    Sacrificing
+}
+
 public class Card3DInteractable : MonoBehaviour
 {
-    [Header("Hover (proximity-based — rises smoothly as cursor approaches)")]
-    [SerializeField] private float hoverLift = 0.000625f;
-    [SerializeField] private float selectedLift = 0.06f;
-    [SerializeField] private float hoverTiltX = -1.5f;
-    [Tooltip("Screen-space radius (pixels) around the card's resting position where proximity hover starts kicking in.")]
-    [SerializeField] private float proximityRadius = 220f;
-    [SerializeField] private float proximitySmoothSpeed = 7f;
+    [Header("References")]
+    [SerializeField] private Transform visualRoot;
+    [SerializeField] private Camera interactionCamera;
+    [SerializeField] private HorizontalCardHolder horizontalHandHolder;
+    [SerializeField] private CardOfferingController offeringController;
 
-    [Header("Exact Click Detection")]
-    [Tooltip("How far the precise click raycast checks. Should comfortably cover the distance from the camera to the table.")]
-    [SerializeField] private float raycastMaxDistance = 100f;
-    [SerializeField] private LayerMask raycastMask = ~0;
+    [Tooltip("Legacy/unused with HorizontalCardHolder. Kept so HandHolder3D.cs can remain in the project.")]
+    [SerializeField] private HandHolder3D handHolder;
 
-    [Header("Dynamic Hover Tilt (ported from CardVisual — card leans toward your cursor)")]
-    [SerializeField] private bool enableDynamicHoverTilt = true;
-    [SerializeField] private float dynamicTiltAmount = 3f;
-    [SerializeField] private float dynamicTiltSmoothSpeed = 10f;
+    [Header("Hand Root Motion")]
+    [SerializeField] private float handMoveSpeed = 28f;
+    [SerializeField] private float handRotateSpeed = 28f;
 
-    [Header("Scale Pop (ported from CardVisual)")]
-    [Tooltip("Card scales up slightly on hover/select, same feel as the old 2D CardVisual. Dragging does NOT use this — see Drag Start Punch below instead.")]
-    [SerializeField] private bool enableScalePop = true;
-    [SerializeField] private float scaleOnHover = 1.03f;
-    [SerializeField] private float scaleOnSelect = 1.08f;
-    [SerializeField] private float scaleTransitionSpeed = 12f;
+    [Header("Stable Hover Detection")]
+    [SerializeField] private float hoverScreenRadius = 120f;
+    [SerializeField] private float hoverIntensitySpeed = 14f;
 
-    [Header("Movement")]
-    [SerializeField] private float moveSpeed = 9f;
-    [SerializeField] private float rotateSpeed = 9f;
+    [Header("Idle - Safe Vertical Bob Only")]
+    [SerializeField] private bool enableIdle = true;
+    [Tooltip("Tiny bob along the table normal. No idle tilt/sideways movement, so cards cannot idle into their neighbors.")]
+    [SerializeField] private float idleLiftAmount = 0.0008f;
+    [SerializeField] private float idleDurationMin = 1.8f;
+    [SerializeField] private float idleDurationMax = 2.6f;
+    [SerializeField] private float idleStartDelayMin = 0f;
+    [SerializeField] private float idleStartDelayMax = 1.2f;
+
+    [Header("Primary Hover - Visual Root Only")]
+    [SerializeField] private Vector3 hoverLocalOffset = new Vector3(0f, 0.008f, 0f);
+    [SerializeField] private Vector3 hoverLocalRotation = new Vector3(-6f, 0f, 0f);
+    [SerializeField] private float hoverInDuration = 0.06f;
+    [SerializeField] private float hoverOutDuration = 0.08f;
+    [SerializeField] private Ease hoverInEase = Ease.OutCubic;
+    [SerializeField] private Ease hoverOutEase = Ease.OutQuad;
+
+    [Header("Hover Audio")]
+    [SerializeField] private AudioSource hoverAudioSource;
+    [SerializeField] private AudioClip hoverSound;
+    [Range(0f, 1f)]
+    [SerializeField] private float hoverVolume = 0.7f;
+    [SerializeField] private float minHoverPitch = 0.97f;
+    [SerializeField] private float maxHoverPitch = 1.03f;
+
+    [Header("Hover Brightness")]
+    [Tooltip("Optional. Assign the card face/base renderers here. If left empty, renderers under Visual Root are found automatically.")]
+    [SerializeField] private Renderer[] hoverBrightnessRenderers;
+    [Tooltip("Subtle albedo boost while hovered. 1.0 = unchanged.")]
+    [SerializeField] private float hoverBrightnessMultiplier = 1.12f;
+    [Tooltip("Small emission contribution so the hovered card stays readable even when it moves away from the room light.")]
+    [SerializeField] private float hoverEmissionStrength = 0.12f;
+    [SerializeField] private float hoverBrightnessSpeed = 18f;
 
     [Header("Drag")]
-    [SerializeField] private bool allowDragging = true;
-    [Tooltip("World-space height (Y) of the flat plane cards drag along. Should match your table's surface height. Using a fixed math plane instead of raycasting against real scene colliders means dragging can't accidentally snap to a wall, another card, or anything else in the way.")]
-    [SerializeField] private float dragPlaneHeight = 0.75f;
-    [SerializeField] private float dragHeightOffset = 0.03f;
-    [SerializeField] private float clickTimeThreshold = 0.2f;
-    [SerializeField] private float dragDistanceThreshold = 0.015f;
-    [Tooltip("Hard cap (meters) on how far a card can travel from its resting slot while dragging. A mouse-ray-vs-plane intersection becomes wildly sensitive near grazing angles (looking toward the horizon) — this stops that from sending the card flying arbitrarily far.")]
-    [SerializeField] private float maxDragDistance = 0.4f;
-    [Tooltip("One-time 'impact' shake fired the instant a drag begins — NOT a continuous effect. Small scale punch amount (e.g. 0.06 = brief 6% pop that immediately settles back).")]
-    [SerializeField] private float dragStartPunchAmount = 0.06f;
-    [SerializeField] private float dragStartPunchAngle = 6f;
-    [SerializeField] private float dragStartPunchDuration = 0.18f;
+    [SerializeField] private bool allowClickSelection = true;
+    [SerializeField] private float clickTimeThreshold = 0.18f;
+    [SerializeField] private float dragPixelThreshold = 6f;
+    [SerializeField] private float dragLift = 0.012f;
+    [Tooltip("During hand reordering, keep the card on a camera-facing plane and pull it slightly toward the camera. This prevents the ray from shooting through the back wall.")]
+    [SerializeField] private float dragTowardCamera = 0.03f;
 
-    [Header("Idle Sway (ported from CardVisual)")]
-    [Tooltip("Enable the subtle continuous breathing/sway motion cards have at rest.")]
-    [SerializeField] private bool enableIdleSway = true;
-    [SerializeField] private float idleSwayAmount = 0.003f;
-    [SerializeField] private float idleTiltAmount = 0.7f;
-    [Tooltip("Set by Card3DTableSpawner so each card's sway is offset in time (avoids every card swaying in sync).")]
-    [SerializeField] private int handIndex = 0;
+    [Header("Hand Drag Bounds")]
+    [Tooltip("Prevents hand cards from being dragged completely off-screen while still leaving plenty of room to reorder and reach the altar.")]
+    [SerializeField] private bool limitHandDragToViewport = true;
 
-    [Header("Hover/Select Punch (ported from CardVisual)")]
-    [SerializeField] private float hoverPunchAngle = 4f;
-    [SerializeField] private float hoverPunchDuration = 0.15f;
-    [Tooltip("Small combined position shake on top of the rotation punch when hover starts — makes it read as an actual little 'shake' rather than just a tilt.")]
-    [SerializeField] private float hoverShakeAmount = 0.01f;
-    [SerializeField] private int hoverShakeVibrato = 14;
-    [SerializeField] private float selectPunchAmount = 0.015f;
-    [SerializeField] private float selectPunchDuration = 0.15f;
+    [Tooltip("Normalized viewport rectangle used only while dragging in the hand. X = left/right, Y = bottom/top.")]
+    [SerializeField] private Vector2 handDragViewportMin = new Vector2(0.08f, 0.16f);
+    [SerializeField] private Vector2 handDragViewportMax = new Vector2(0.92f, 0.84f);
 
-    [Header("Drag Lean (ported from CardVisual.FollowRotation)")]
-    [Tooltip("While dragging, the card tilts based on how fast/which direction you're moving it — gives it a bit of weight.")]
+    [Header("Velocity Drag Lean")]
+    [Tooltip("Re-enables the old physical-card feel: faster mouse movement produces more visual tilt, and slowing down lets the card settle back toward flat.")]
     [SerializeField] private bool enableDragLean = true;
-    [SerializeField] private float dragLeanAmount = 8f;
-    [SerializeField] private float dragLeanSmoothSpeed = 15f;
-    [SerializeField] private float dragLeanMaxAngle = 35f;
 
-    [Header("Swap Punch (ported from CardVisual.Swap)")]
-    [SerializeField] private float swapRotationAngle = 25f;
-    [SerializeField] private float swapPunchDuration = 0.15f;
-    [SerializeField] private int swapVibrato = 5;
+    [Tooltip("Maximum side-to-side roll caused by horizontal drag speed.")]
+    [SerializeField] private float dragLeanMaxRoll = 18f;
 
-    private Camera mainCamera;
+    [Tooltip("Maximum forward/back pitch caused by vertical drag speed.")]
+    [SerializeField] private float dragLeanMaxPitch = 7f;
+
+    [Tooltip("Mouse speed in pixels/second that reaches the maximum tilt.")]
+    [SerializeField] private float dragLeanPixelsPerSecondForMax = 1200f;
+
+    [Tooltip("Legacy smoothing value kept for Inspector compatibility. The new spring wobble below is now used for the actual drag motion.")]
+    [SerializeField] private float dragLeanSmoothSpeed = 18f;
+
+    [Header("Picked-Up Hanging Pose")]
+    [Tooltip("While held, use the hand's neutral/center card rotation instead of the card's fanned slot rotation. This makes the held card hang straight without a camera-axis 90-degree flip.")]
+    [SerializeField] private bool straightenCardWhileDragging = true;
+
+    [Tooltip("Optional fine-tuning applied after the neutral hand rotation. Leave at zero unless you deliberately want a different hanging angle.")]
+    [SerializeField] private Vector3 dragHangEulerOffset = Vector3.zero;
+
+    [Tooltip("Small drop below the cursor, helping the card feel like it is hanging from the point where you picked it up.")]
+    [SerializeField] private float dragHangDownOffset = 0.025f;
+
+    [Tooltip("How quickly the root rotates from its fanned table pose into the straight held pose.")]
+    [SerializeField] private float dragHangRotateSpeed = 24f;
+
+    [Header("Drag Swing / Wobble")]
+    [Tooltip("Spring strength pulling the card back toward its velocity-driven hanging angle.")]
+    [SerializeField] private float dragSwingSpring = 95f;
+
+    [Tooltip("Lower values wobble longer; higher values settle faster. Around 10-13 gives a short physical swing after a sudden stop.")]
+    [SerializeField] private float dragSwingDamping = 11f;
+
+    [Tooltip("Extra headroom for the spring overshoot before angles are clamped.")]
+    [SerializeField] private float dragSwingOvershootLimit = 1.35f;
+
+    [Header("Snappy Altar Flight")]
+    [Tooltip("Tiny anticipation pop before the card rockets toward the altar.")]
+    [SerializeField] private float altarAnticipationDuration = 0.035f;
+    [SerializeField] private float altarAnticipationTowardCamera = 0.018f;
+    [SerializeField] private float altarAnticipationScale = 1.045f;
+
+    [Tooltip("Main travel time from the hand to the altar preview. Keep short for the snappy/keyframed feel.")]
+    [SerializeField] private float altarFlightDuration = 0.13f;
+
+    [Tooltip("OutBack overshoot. Around 1.1-1.35 gives a small stylized overshoot without feeling rubbery.")]
+    [SerializeField] private float altarFlightOvershoot = 1.22f;
+
+    [Tooltip("Visual scale while the card is hovering at the altar preview.")]
+    [SerializeField] private float altarPreviewScale = 1.025f;
+
+    [Tooltip("How quickly a card snaps back to the near-camera hand plane if you drag it back out of the altar region.")]
+    [SerializeField] private float altarReturnToHandSpeed = 24f;
+
+    [Header("Offering Burn")]
+    [Tooltip("Brief hot orange/red flash while the real card burns away in the altar recess.")]
+    [SerializeField] private Color offeringBurnColor = new Color(1f, 0.22f, 0.04f, 1f);
+    [SerializeField] private float offeringBurnEmissionStrength = 2.0f;
+    [SerializeField] private float offeringBurnScalePop = 1.05f;
+
+    [Header("Swap Punch")]
+    [SerializeField] private float swapPunchDistance = 0.012f;
+    [SerializeField] private float swapPunchDuration = 0.11f;
+
     private Card3DView cardView;
-
-    /// <summary>
-    /// A STATIC, never-animated trigger collider (created and positioned by
-    /// HorizontalCardHolder) used for all hover/click hit-testing instead
-    /// of this card's own collider — which moves every frame from rise,
-    /// nudge, tilt, and sway. Raycasting against a fixed anchor means the
-    /// hit result only changes when a real re-fan happens (deal/reorder),
-    /// never from animation, which is what eliminates the overlap-boundary
-    /// flicker entirely.
-    /// </summary>
-    private Collider _hoverAnchor;
 
     private Vector3 basePosition;
     private Quaternion baseRotation;
-    private Vector3 baseScale = Vector3.one;
-    private Vector3 _dynamicTiltCurrent = Vector3.zero;
-    private Vector3 _prevFramePosition;
-    private float _dragLeanCurrent = 0f;
+    private bool hasBasePose;
 
-    private Vector3 targetPosition;
-    private Quaternion targetRotation;
+    private Vector3 targetWaveWorldOffset;
+    private Vector3 currentWaveWorldOffset;
+    private float targetWaveScaleBoost;
+    private float currentWaveScaleBoost;
 
-    /// <summary>Smoothed 0-1 proximity value — the real driver of hover visuals now.</summary>
-    private float _hoverIntensity = 0f;
+    private Vector3 visualBaseLocalPosition;
+    private Quaternion visualBaseLocalRotation;
+    private Vector3 visualBaseLocalScale;
 
-    private bool isSelected;
-    private bool isDragging;
+    private Tween idleMoveTween;
+    private Sequence visualTween;
 
-    // Tracks whether the mouse button went down while this specific card
-    // was the exact one under the cursor — needed since drag can move the
-    // cursor off this card while the button stays held.
-    private bool _pointerDownOnThisCard;
+    private Collider hoverAnchor;
+    private int handIndex = -1;
+    private float hoverIntensity;
+    private bool isPrimaryHover;
+
+    private bool pointerDown;
     private float pointerDownTime;
-    private Vector3 pointerDownWorldPosition;
-    private Vector3 dragOffset;
+    private Vector2 pointerDownScreenPosition;
+    private Vector3 dragGrabOffset;
+    private bool isDraggingOverOffering;
+    private bool isReturningFromOffering;
 
-    /// <summary>Whether the cursor's exact raycast is directly over this card's own collider right now — used for the hover sound/punch instead of the smooth proximity value, so it fires the instant you're anywhere over the card, not just near-perfectly centered.</summary>
-    private bool _exactHover;
+    private Vector2 lastDragScreenPosition;
+    private bool hasLastDragScreenPosition;
+    private Vector2 currentDragLean;
+    private Vector2 dragLeanAngularVelocity;
+    private Sequence altarFlightTween;
+    private bool isBurningVisual;
 
-    /// <summary>Combined position offset (lift + forward-push + sideways nudge) applied by HorizontalCardHolder's hover-wave system — see SetWaveEffect.</summary>
-    private Vector3 _waveOffset;
-    /// <summary>Extra scale multiplier contribution from the hover-wave system, added on top of the normal hover/select scale.</summary>
-    private float _waveScaleBoost;
+    private sealed class HoverRendererState
+    {
+        public Renderer renderer;
+        public MaterialPropertyBlock block;
+        public Color baseColor = Color.white;
+        public Color baseEmission = Color.black;
+        public bool hasBaseColor;
+        public bool hasColor;
+        public bool hasEmission;
+    }
+
+    private readonly List<HoverRendererState> hoverRendererStates =
+        new List<HoverRendererState>();
+
+    private float hoverBrightness01;
+
+    public CardPhysicalState PhysicalState { get; private set; } = CardPhysicalState.InHand;
+    public bool IsDragging => PhysicalState == CardPhysicalState.Dragging;
+    public bool IsDraggingInHand =>
+        PhysicalState == CardPhysicalState.Dragging &&
+        !isDraggingOverOffering;
+    public bool IsOffered => PhysicalState == CardPhysicalState.Offered;
+    public bool IsSelected => SourceCard != null && SourceCard.selected;
+    public float HoverIntensity => hoverIntensity;
+    public int HandIndex => handIndex;
+    public Card3DView CardView => cardView;
+    public Transform VisualRoot => visualRoot;
+    public Card SourceCard => cardView != null ? cardView.SourceCard : null;
+    public HorizontalCardHolder HorizontalHandHolder => horizontalHandHolder;
+    public HandHolder3D HandHolder => handHolder;
 
     private void Awake()
     {
-        mainCamera = Camera.main;
         cardView = GetComponent<Card3DView>();
+
+        if (interactionCamera == null)
+            interactionCamera = Camera.main;
+
+        if (visualRoot == null)
+        {
+            Transform found = transform.Find("Card");
+            if (found != null)
+                visualRoot = found;
+        }
+
+        if (hoverAudioSource == null)
+            hoverAudioSource = GetComponent<AudioSource>();
+
+        // Make hover audio self-contained. If the prefab does not already have
+        // an AudioSource, create one automatically.
+        if (hoverAudioSource == null)
+            hoverAudioSource = gameObject.AddComponent<AudioSource>();
+
+        hoverAudioSource.playOnAwake = false;
+        hoverAudioSource.loop = false;
+        hoverAudioSource.spatialBlend = 0f; // UI-like card riffle: always audible
+
+        // Also allow the clip to be assigned directly on the AudioSource.
+        if (hoverSound == null && hoverAudioSource.clip != null)
+            hoverSound = hoverAudioSource.clip;
+
+        if (visualRoot != null)
+        {
+            visualBaseLocalPosition = visualRoot.localPosition;
+            visualBaseLocalRotation = visualRoot.localRotation;
+            visualBaseLocalScale = visualRoot.localScale;
+        }
+
+        InitializeHoverBrightness();
 
         basePosition = transform.position;
         baseRotation = transform.rotation;
-        baseScale = transform.localScale;
-        _prevFramePosition = transform.position;
+        hasBasePose = true;
+    }
 
-        targetPosition = basePosition;
-        targetRotation = baseRotation;
+    private void Start()
+    {
+        if (horizontalHandHolder == null)
+            horizontalHandHolder = GetComponentInParent<HorizontalCardHolder>();
+
+        if (offeringController == null)
+            offeringController = FindFirstObjectByType<CardOfferingController>();
+
+        if (horizontalHandHolder == null)
+        {
+            if (handHolder == null)
+                handHolder = FindFirstObjectByType<HandHolder3D>();
+
+            if (handHolder != null)
+                handHolder.RegisterCard(this);
+        }
+
+        StartIdle();
+    }
+
+    private void OnDestroy()
+    {
+        KillVisualTweens();
+        KillAltarFlightTween();
+        transform.DOKill(false);
+
+        if (horizontalHandHolder == null && handHolder != null)
+            handHolder.UnregisterCard(this);
     }
 
     private void Update()
     {
-        UpdateProximityHover();
-        HandleExactClickDetection();
-
-        if (isDragging && allowDragging)
-        {
-            UpdateDragTarget();
-        }
-        else
-        {
-            RefreshPose();
-        }
-
-        Vector3 swayPos = Vector3.zero;
-        Quaternion swayRot = Quaternion.identity;
-
-        if (enableIdleSway && !isDragging)
-        {
-            float sine   = Mathf.Sin(Time.time + handIndex);
-            float cosine = Mathf.Cos(Time.time + handIndex);
-            float damp   = Mathf.Lerp(1f, 0.2f, _hoverIntensity); // calm down as hover intensifies
-
-            swayPos = new Vector3(0f, sine * idleSwayAmount * damp, 0f);
-            swayRot = Quaternion.Euler(sine * idleTiltAmount * damp, cosine * idleTiltAmount * damp, 0f);
-        }
-
-        Vector3 targetDynamicTilt = Vector3.zero;
-        if (enableDynamicHoverTilt && _hoverIntensity > 0.01f && mainCamera != null && Mouse.current != null)
-        {
-            Vector3 screenPos = mainCamera.WorldToScreenPoint(basePosition);
-            Vector2 mousePos = Mouse.current.position.ReadValue();
-            Vector3 offset = (Vector3)mousePos - screenPos;
-            float nx = Mathf.Clamp(offset.x / (Screen.width * 0.5f), -1f, 1f);
-            float ny = Mathf.Clamp(offset.y / (Screen.height * 0.5f), -1f, 1f);
-            targetDynamicTilt = new Vector3(-ny * dynamicTiltAmount, 0f, nx * dynamicTiltAmount) * _hoverIntensity;
-        }
-        _dynamicTiltCurrent = Vector3.Lerp(_dynamicTiltCurrent, targetDynamicTilt, Time.deltaTime * dynamicTiltSmoothSpeed);
-        Quaternion dynamicTiltRot = Quaternion.Euler(_dynamicTiltCurrent);
-
-        float targetDragLean = 0f;
-        if (enableDragLean && isDragging)
-        {
-            Vector3 frameMovement = transform.position - _prevFramePosition;
-            targetDragLean = Mathf.Clamp(frameMovement.x * dragLeanAmount * 100f, -dragLeanMaxAngle, dragLeanMaxAngle);
-        }
-        _dragLeanCurrent = Mathf.LerpAngle(_dragLeanCurrent, targetDragLean, Time.deltaTime * dragLeanSmoothSpeed);
-        Quaternion dragLeanRot = Quaternion.Euler(0f, 0f, _dragLeanCurrent);
-
-        transform.position = Vector3.Lerp(
-            transform.position,
-            targetPosition + swayPos,
-            Time.deltaTime * moveSpeed
-        );
-
-        transform.rotation = Quaternion.Slerp(
-            transform.rotation,
-            targetRotation * swayRot * dynamicTiltRot * dragLeanRot,
-            Time.deltaTime * rotateSpeed
-        );
-
-        if (enableScalePop)
-        {
-            // No continuous scale-up while dragging — that was the source of
-            // the "rising toward camera" feeling. Dragging now only gets the
-            // one-time punch fired in BeginDrag(); ongoing scale is driven
-            // purely by select/hover state, same as when not dragging.
-            float hoverScale = Mathf.Lerp(1f, scaleOnHover, _hoverIntensity);
-            float scaleMult = (isSelected ? scaleOnSelect : hoverScale) + _waveScaleBoost;
-            transform.localScale = Vector3.Lerp(
-                transform.localScale,
-                baseScale * scaleMult,
-                Time.deltaTime * scaleTransitionSpeed
-            );
-        }
-
-        _prevFramePosition = transform.position;
-    }
-
-    // ── Proximity hover (replaces the old binary raycast hover) ─────────────
-
-    private void UpdateProximityHover()
-    {
-        float targetIntensity = 0f;
-
-        if (mainCamera == null)
-            mainCamera = Camera.main;
-
-        if (mainCamera != null && Mouse.current != null && !isDragging)
-        {
-            // Project the STABLE resting position, not the live (moving)
-            // transform — this is the key fix. Projecting the live
-            // position would make the proximity value shrink as the card
-            // rose toward the cursor, then grow again as it eased back,
-            // causing an oscillating feedback loop (the "jiggle").
-            Vector3 screenPos = mainCamera.WorldToScreenPoint(basePosition);
-            if (screenPos.z > 0f) // only if the point is in front of the camera
-            {
-                Vector2 mousePos = Mouse.current.position.ReadValue();
-                float dist = Vector2.Distance(mousePos, new Vector2(screenPos.x, screenPos.y));
-                float linear = Mathf.Clamp01(1f - dist / proximityRadius);
-                // Smoothstep instead of linear falloff — eases in gently near
-                // the outer edge of the radius instead of ramping up abruptly.
-                targetIntensity = linear * linear * (3f - 2f * linear);
-            }
-        }
-        else if (isDragging)
-        {
-            targetIntensity = 1f;
-        }
-
-        _hoverIntensity = Mathf.Lerp(_hoverIntensity, targetIntensity, Time.deltaTime * proximitySmoothSpeed);
-    }
-
-    // ── Exact click detection (separate from the smooth proximity hover) ────
-
-    private void HandleExactClickDetection()
-    {
-        bool hitThisCard = false;
-
-        if (mainCamera != null && Mouse.current != null)
-        {
-            Vector2 mousePos = Mouse.current.position.ReadValue();
-            Ray ray = mainCamera.ScreenPointToRay(mousePos);
-
-            if (Physics.Raycast(ray, out RaycastHit hit, raycastMaxDistance, raycastMask, QueryTriggerInteraction.Collide))
-            {
-                hitThisCard = _hoverAnchor != null && hit.collider == _hoverAnchor;
-            }
-        }
-
-        // Hover sound/punch fires the instant the cursor is anywhere over
-        // this card's actual collider — not tied to the smooth proximity
-        // value, which only reaches its "fully hovered" threshold near the
-        // card's exact center. This is a plain edge-trigger on the real hit
-        // test, so it plays as soon as you're on the card at all.
-        // Hover just plays the sound now — no shake here anymore (moved to
-        // selection instead, see ToggleSelected()).
-        if (hitThisCard && !_exactHover)
-        {
-            AudioManager.Instance?.Play("card_hover");
-        }
-        _exactHover = hitThisCard;
-
-        var mouse = Mouse.current;
-        if (mouse == null) return;
-
-        if (hitThisCard && mouse.leftButton.wasPressedThisFrame && !_pointerDownOnThisCard)
-        {
-            _pointerDownOnThisCard = true;
-            OnPointerDown();
-        }
-
-        if (_pointerDownOnThisCard && allowDragging && mouse.leftButton.isPressed && !isDragging)
-        {
-            // Only actual mouse MOVEMENT should start a drag — holding the
-            // button still should never by itself trigger dragging.
-            float movedDistance = Vector3.Distance(transform.position, pointerDownWorldPosition);
-            if (movedDistance > dragDistanceThreshold)
-                BeginDrag();
-        }
-
-        if (_pointerDownOnThisCard && mouse.leftButton.wasReleasedThisFrame)
-        {
-            OnPointerUp();
-            _pointerDownOnThisCard = false;
-        }
-    }
-
-    private void OnPointerDown()
-    {
-        pointerDownTime = Time.time;
-        pointerDownWorldPosition = transform.position;
-
-        if (TryGetDragPlanePoint(out Vector3 hitPoint))
-            dragOffset = transform.position - hitPoint;
-        else
-            dragOffset = Vector3.zero;
-    }
-
-    /// <summary>
-    /// Fires once, the exact frame a drag actually begins — a quick one-shot
-    /// "impact" shake, not a continuous effect. Dragging itself applies NO
-    /// ongoing scale-up or extra lift beyond this single punch; the card
-    /// just tracks the drag plane at its normal size from here on.
-    /// </summary>
-    private void BeginDrag()
-    {
-        isDragging = true;
-
-        transform.DOKill(false);
-        transform.DOPunchScale(Vector3.one * dragStartPunchAmount, dragStartPunchDuration, 8, 0.6f);
-        transform.DOPunchRotation(Vector3.forward * dragStartPunchAngle, dragStartPunchDuration, 8, 0.6f);
-    }
-
-    private void OnPointerUp()
-    {
-        bool wasClick = Time.time - pointerDownTime <= clickTimeThreshold && !isDragging;
-
-        if (wasClick)
-            ToggleSelected();
-
-        if (isDragging)
-        {
-            isDragging = false;
-            basePosition = transform.position;
-        }
-    }
-
-    private void ToggleSelected()
-    {
-        isSelected = !isSelected;
-
-        if (cardView != null)
-            cardView.SetSourceSelected(isSelected);
-
-        // Shake on select/deselect — moved here from hover. Combined into a
-        // single position punch (upward lift + multi-axis rattle merged
-        // into one vector, since two separate DOPunchPosition calls on the
-        // same property would fight each other) plus a separate rotation
-        // punch (different property, safe to run alongside).
-        transform.DOKill(false);
-        Vector3 upDir = isSelected ? Vector3.up * selectPunchAmount : Vector3.zero;
-        Vector3 shake = new Vector3(hoverShakeAmount, hoverShakeAmount * 0.6f, hoverShakeAmount * 0.4f);
-        transform.DOPunchPosition(upDir + shake, selectPunchDuration, hoverShakeVibrato, 0.9f);
-        transform.DOPunchRotation(Vector3.forward * hoverPunchAngle, hoverPunchDuration, 10, 1f);
-    }
-
-    private void RefreshPose()
-    {
-        float lift = Mathf.Lerp(0f, hoverLift, _hoverIntensity);
-        if (isSelected)
-            lift = Mathf.Max(lift, selectedLift);
-
-        targetPosition = basePosition + Vector3.up * lift + _waveOffset;
-
-        float tiltAmount = Mathf.Lerp(0f, hoverTiltX, _hoverIntensity);
-        targetRotation = baseRotation * Quaternion.Euler(tiltAmount, 0f, 0f);
-    }
-
-    private void UpdateDragTarget()
-    {
-        if (!TryGetDragPlanePoint(out Vector3 hitPoint))
-            return;
-
-        Vector3 rawTarget = hitPoint + dragOffset + Vector3.up * dragHeightOffset;
-
-        // Hard-clamp displacement from the resting slot — this is what
-        // actually fixes "flies through the wall": no matter how extreme
-        // the raw plane math gets near grazing angles, the card can never
-        // travel further than maxDragDistance from where it started.
-        Vector3 clampedOffset = Vector3.ClampMagnitude(rawTarget - basePosition, maxDragDistance);
-
-        targetPosition = basePosition + clampedOffset;
-        targetRotation = baseRotation;
-    }
-
-    /// <summary>
-    /// Where the cursor ray crosses a fixed horizontal math plane at
-    /// dragPlaneHeight — NOT a physics raycast against real scene
-    /// colliders. This is what keeps dragging on one uniform, predictable
-    /// surface: a physics raycast could hit a wall, another card, or a gap
-    /// in the table depending on exactly where the cursor points, causing
-    /// the card to jump wildly. A plane can't be "missed" or hit the wrong
-    /// thing — it's infinite and always at the same height.
-    /// </summary>
-    private bool TryGetDragPlanePoint(out Vector3 worldPoint)
-    {
-        worldPoint = Vector3.zero;
-
-        if (mainCamera == null)
-            mainCamera = Camera.main;
-
-        if (mainCamera == null || Mouse.current == null)
-            return false;
-
-        Vector2 mousePos = Mouse.current.position.ReadValue();
-        Ray ray = mainCamera.ScreenPointToRay(mousePos);
-
-        Plane dragPlane = new Plane(Vector3.up, new Vector3(0f, dragPlaneHeight, 0f));
-
-        if (dragPlane.Raycast(ray, out float enter))
-        {
-            worldPoint = ray.GetPoint(enter);
-            return true;
-        }
-
-        return false;
+        UpdateHoverIntensity();
+        HandlePointerInput();
+        UpdateHandRootPose();
+        UpdateWaveScale();
+        UpdateHoverBrightness();
     }
 
     public void SetBasePose(Vector3 position, Quaternion rotation)
     {
         basePosition = position;
         baseRotation = rotation;
-        RefreshPose();
+        hasBasePose = true;
     }
 
-    public void SetSelectedVisual(bool selected)
-    {
-        isSelected = selected;
-        RefreshPose();
-    }
-
-    /// <summary>Forces this card to deselected state (e.g. right-click "deselect all"), keeping cardView in sync.</summary>
-    public void Deselect()
-    {
-        if (!isSelected) return;
-        isSelected = false;
-        if (cardView != null)
-            cardView.SetSourceSelected(false);
-        RefreshPose();
-    }
-
-    /// <summary>Called by Card3DTableSpawner so each card's idle sway is staggered in time.</summary>
     public void SetHandIndex(int index)
     {
         handIndex = index;
     }
 
-    /// <summary>Punch-rotation flourish when this card gets displaced during a hand reorder, ported from CardVisual.Swap(). dir = -1 or 1 for which way it's being pushed.</summary>
-    public void PunchSwap(float dir = 1f)
+    public void SetHoverAnchor(Collider anchor)
     {
+        hoverAnchor = anchor;
+    }
+
+    public void SetWaveEffect(Vector3 worldOffset, float scaleBoost)
+    {
+        if (PhysicalState != CardPhysicalState.InHand &&
+            PhysicalState != CardPhysicalState.Dragging)
+        {
+            targetWaveWorldOffset = Vector3.zero;
+            targetWaveScaleBoost = 0f;
+            return;
+        }
+
+        targetWaveWorldOffset = IsDragging ? Vector3.zero : worldOffset;
+        targetWaveScaleBoost = IsDragging ? 0f : scaleBoost;
+    }
+
+    public void SetPrimaryHover(bool active)
+    {
+        if (PhysicalState != CardPhysicalState.InHand)
+            active = false;
+
+        if (isPrimaryHover == active)
+            return;
+
+        isPrimaryHover = active;
+
+        if (isPrimaryHover)
+        {
+            PlayHoverSound();
+            AnimateHoverIn();
+        }
+        else if (!pointerDown && !IsDragging)
+        {
+            AnimateHoverOut();
+        }
+    }
+
+    public void Deselect()
+    {
+        if (cardView != null)
+            cardView.SetSourceSelected(false);
+    }
+
+    public void PunchSwap(float direction)
+    {
+        if (visualRoot == null || PhysicalState != CardPhysicalState.InHand)
+            return;
+
+        KillVisualTweens();
+
+        Vector3 start = visualBaseLocalPosition;
+        Vector3 side = Vector3.right * (swapPunchDistance * Mathf.Sign(direction));
+
+        visualTween = DOTween.Sequence();
+        visualTween.Append(
+            visualRoot.DOLocalMove(start + side, swapPunchDuration * 0.35f)
+                .SetEase(Ease.OutQuad)
+        );
+        visualTween.Append(
+            visualRoot.DOLocalMove(start, swapPunchDuration * 0.65f)
+                .SetEase(Ease.OutBack)
+        );
+        visualTween.OnComplete(() =>
+        {
+            if (isPrimaryHover)
+                AnimateHoverIn();
+            else
+                StartIdle();
+        });
+    }
+
+    private void UpdateHoverIntensity()
+    {
+        float target = 0f;
+
+        if (PhysicalState == CardPhysicalState.InHand && hoverAnchor != null)
+        {
+            if (interactionCamera == null)
+                interactionCamera = Camera.main;
+
+            Mouse mouse = Mouse.current;
+
+            if (interactionCamera != null && mouse != null)
+            {
+                Vector3 screen =
+                    interactionCamera.WorldToScreenPoint(hoverAnchor.bounds.center);
+
+                if (screen.z > 0f)
+                {
+                    Vector2 mousePos = mouse.position.ReadValue();
+                    float distance = Vector2.Distance(mousePos, (Vector2)screen);
+                    target = Mathf.Clamp01(
+                        1f - distance / Mathf.Max(hoverScreenRadius, 1f)
+                    );
+
+                    target = target * target * (3f - 2f * target);
+                }
+            }
+        }
+
+        hoverIntensity = Mathf.MoveTowards(
+            hoverIntensity,
+            target,
+            hoverIntensitySpeed * Time.deltaTime
+        );
+    }
+
+    private void HandlePointerInput()
+    {
+        Mouse mouse = Mouse.current;
+
+        if (mouse == null)
+            return;
+
+        if (PhysicalState == CardPhysicalState.InHand &&
+            isPrimaryHover &&
+            mouse.leftButton.wasPressedThisFrame)
+        {
+            pointerDown = true;
+            pointerDownTime = Time.time;
+            pointerDownScreenPosition = mouse.position.ReadValue();
+
+            if (TryGetDragPlanePoint(pointerDownScreenPosition, out Vector3 dragPoint))
+                dragGrabOffset = transform.position - dragPoint;
+            else
+                dragGrabOffset = Vector3.zero;
+        }
+
+        if (!pointerDown)
+            return;
+
+        if (mouse.leftButton.isPressed)
+        {
+            if (PhysicalState == CardPhysicalState.InHand)
+            {
+                float pixels =
+                    Vector2.Distance(
+                        pointerDownScreenPosition,
+                        mouse.position.ReadValue()
+                    );
+
+                if (pixels >= dragPixelThreshold)
+                    BeginDrag();
+            }
+
+            if (PhysicalState == CardPhysicalState.Dragging)
+                UpdateDrag(mouse.position.ReadValue());
+        }
+
+        if (mouse.leftButton.wasReleasedThisFrame)
+        {
+            pointerDown = false;
+
+            if (PhysicalState == CardPhysicalState.Dragging)
+            {
+                FinishDrag();
+                return;
+            }
+
+            bool wasClick =
+                Time.time - pointerDownTime <= clickTimeThreshold;
+
+            if (wasClick && allowClickSelection && cardView != null)
+                cardView.ToggleSourceSelected();
+
+            if (isPrimaryHover)
+                AnimateHoverIn();
+            else
+                AnimateHoverOut();
+        }
+    }
+
+    private void BeginDrag()
+    {
+        PhysicalState = CardPhysicalState.Dragging;
+        isDraggingOverOffering = false;
+        isReturningFromOffering = false;
+
+        lastDragScreenPosition =
+            Mouse.current != null
+                ? Mouse.current.position.ReadValue()
+                : pointerDownScreenPosition;
+        hasLastDragScreenPosition = true;
+        currentDragLean = Vector2.zero;
+        dragLeanAngularVelocity = Vector2.zero;
+
+        KillVisualTweens();
+        KillAltarFlightTween();
+        ResetVisualImmediate();
+
+        targetWaveWorldOffset = Vector3.zero;
+        currentWaveWorldOffset = Vector3.zero;
+        targetWaveScaleBoost = 0f;
+        currentWaveScaleBoost = 0f;
+
         transform.DOKill(false);
-        transform.DOPunchRotation(Vector3.forward * swapRotationAngle * dir, swapPunchDuration, swapVibrato, 1f);
+
+        if (horizontalHandHolder == null && handHolder != null)
+            handHolder.BeginDrag(this);
     }
 
-    /// <summary>Called once by HorizontalCardHolder right after creating this card's static hover anchor — see the _hoverAnchor field comment for why hit-testing uses a separate, non-animated collider instead of this card's own.</summary>
-    public void SetHoverAnchor(Collider anchorCollider)
+    private void UpdateDrag(Vector2 screenPosition)
     {
-        _hoverAnchor = anchorCollider;
+        if (interactionCamera == null)
+            interactionCamera = Camera.main;
+
+        bool overOffering = false;
+        Vector3 altarPosition = Vector3.zero;
+        Quaternion altarRotation = Quaternion.identity;
+
+        if (offeringController != null &&
+            interactionCamera != null)
+        {
+            overOffering =
+                offeringController.TryGetDragPreviewPose(
+                    interactionCamera,
+                    screenPosition,
+                    out altarPosition,
+                    out altarRotation
+                );
+        }
+
+        // ENTER ALTAR REGION:
+        // one fast anticipation -> fly -> tiny overshoot/settle.
+        if (overOffering)
+        {
+            if (!isDraggingOverOffering)
+            {
+                isDraggingOverOffering = true;
+                isReturningFromOffering = false;
+                ResetDragLeanImmediate();
+
+                BeginSnappyAltarFlight(
+                    altarPosition,
+                    altarRotation
+                );
+            }
+
+            // While the mouse remains in altar territory, the card is owned by
+            // the altar preview animation instead of following the cursor.
+            return;
+        }
+
+        // EXIT ALTAR REGION:
+        // cancel the altar preview and snap back toward the near-camera hand
+        // plane. Once it catches up, normal left/right reordering continues.
+        if (isDraggingOverOffering)
+        {
+            isDraggingOverOffering = false;
+            isReturningFromOffering = true;
+            KillAltarFlightTween();
+
+            if (visualRoot != null)
+            {
+                visualRoot.DOKill(false);
+                visualRoot.DOScale(
+                    visualBaseLocalScale,
+                    0.06f
+                ).SetEase(Ease.OutCubic);
+            }
+        }
+
+        Vector2 handDragScreenPosition =
+            ClampHandDragScreenPosition(screenPosition);
+
+        UpdateDragLean(handDragScreenPosition);
+
+        if (TryGetDragPlanePoint(
+            handDragScreenPosition,
+            out Vector3 worldPoint))
+        {
+            Vector3 up =
+                horizontalHandHolder != null
+                    ? horizontalHandHolder.transform.up
+                    : Vector3.up;
+
+            Vector3 towardCamera =
+                interactionCamera != null
+                    ? -interactionCamera.transform.forward * dragTowardCamera
+                    : Vector3.zero;
+
+            Vector3 hangingDown =
+                interactionCamera != null
+                    ? -interactionCamera.transform.up * dragHangDownOffset
+                    : Vector3.zero;
+
+            Vector3 handDragTarget =
+                worldPoint +
+                dragGrabOffset +
+                up * dragLift +
+                towardCamera +
+                hangingDown;
+
+            Quaternion handDragRotation = GetHandDragHangRotation();
+
+            if (isReturningFromOffering)
+            {
+                float returnT =
+                    1f - Mathf.Exp(
+                        -altarReturnToHandSpeed *
+                        Time.deltaTime
+                    );
+
+                transform.position =
+                    Vector3.Lerp(
+                        transform.position,
+                        handDragTarget,
+                        returnT
+                    );
+
+                transform.rotation =
+                    Quaternion.Slerp(
+                        transform.rotation,
+                        handDragRotation,
+                        returnT
+                    );
+
+                if (Vector3.Distance(
+                    transform.position,
+                    handDragTarget) < 0.002f)
+                {
+                    isReturningFromOffering = false;
+                }
+            }
+            else
+            {
+                transform.position =
+                    handDragTarget;
+
+                float hangRotateT =
+                    1f - Mathf.Exp(-dragHangRotateSpeed * Time.deltaTime);
+
+                transform.rotation =
+                    Quaternion.Slerp(
+                        transform.rotation,
+                        handDragRotation,
+                        hangRotateT
+                    );
+            }
+
+            if (horizontalHandHolder == null &&
+                handHolder != null)
+            {
+                handHolder.UpdateDraggedCard(this);
+            }
+        }
     }
 
-    /// <summary>True while the player is actively dragging this card.</summary>
-    public bool IsDragging => isDragging;
-
-    /// <summary>True while the cursor's exact raycast is directly over this card — used by HorizontalCardHolder to detect which card should push its neighbors aside.</summary>
-    public bool IsHoveredExact => _exactHover;
-
-    /// <summary>Smoothed 0-1 proximity value — stable frame-to-frame (unlike a raw raycast hit test, which can flicker between two overlapping cards right at their boundary). Used by HorizontalCardHolder to pick the neighbor-nudge target smoothly.</summary>
-    public float HoverIntensity => _hoverIntensity;
-
-    /// <summary>Called by HorizontalCardHolder's hover-wave system every frame — combined lift/forward/sideways position offset, plus an extra scale multiplier, both tapering with distance from whichever card is closest to the cursor.</summary>
-    public void SetWaveEffect(Vector3 positionOffset, float scaleBoost)
+    private void BeginSnappyAltarFlight(
+        Vector3 targetPosition,
+        Quaternion targetRotation)
     {
-        _waveOffset = positionOffset;
-        _waveScaleBoost = scaleBoost;
+        KillAltarFlightTween();
+        KillVisualTweens();
+
+        Vector3 anticipationPosition =
+            transform.position;
+
+        if (interactionCamera != null)
+        {
+            anticipationPosition +=
+                -interactionCamera.transform.forward *
+                altarAnticipationTowardCamera;
+        }
+
+        altarFlightTween =
+            DOTween.Sequence();
+
+        // 1) Tiny anticipation pop toward the player.
+        altarFlightTween.Append(
+            transform.DOMove(
+                anticipationPosition,
+                altarAnticipationDuration
+            ).SetEase(Ease.OutQuad)
+        );
+
+        if (visualRoot != null)
+        {
+            altarFlightTween.Join(
+                visualRoot.DOScale(
+                    visualBaseLocalScale *
+                    altarAnticipationScale,
+                    altarAnticipationDuration
+                ).SetEase(Ease.OutQuad)
+            );
+        }
+
+        // 2) Rocket to the altar with a small overshoot.
+        altarFlightTween.Append(
+            transform.DOMove(
+                targetPosition,
+                altarFlightDuration
+            ).SetEase(
+                Ease.OutBack,
+                altarFlightOvershoot
+            )
+        );
+
+        altarFlightTween.Join(
+            transform.DORotateQuaternion(
+                targetRotation,
+                altarFlightDuration
+            ).SetEase(Ease.OutCubic)
+        );
+
+        if (visualRoot != null)
+        {
+            altarFlightTween.Join(
+                visualRoot.DOScale(
+                    visualBaseLocalScale *
+                    altarPreviewScale,
+                    altarFlightDuration
+                ).SetEase(Ease.OutCubic)
+            );
+        }
+    }
+
+    private void KillAltarFlightTween()
+    {
+        if (altarFlightTween != null &&
+            altarFlightTween.IsActive())
+        {
+            altarFlightTween.Kill(false);
+        }
+
+        altarFlightTween = null;
+    }
+
+    private void FinishDrag()
+    {
+        if (interactionCamera == null)
+            interactionCamera = Camera.main;
+
+        bool staged = false;
+
+        if (offeringController != null && interactionCamera != null)
+        {
+            Vector2 pointer =
+                Mouse.current != null
+                    ? Mouse.current.position.ReadValue()
+                    : (Vector2)Input.mousePosition;
+
+            if (offeringController.IsPointerOverOffering(
+                interactionCamera,
+                pointer))
+            {
+                staged = offeringController.TryStageCard(this);
+            }
+        }
+
+        if (staged)
+            return;
+
+        KillAltarFlightTween();
+        ResetDragLeanImmediate();
+        hasLastDragScreenPosition = false;
+        isDraggingOverOffering = false;
+        isReturningFromOffering = false;
+        PhysicalState = CardPhysicalState.InHand;
+
+        if (horizontalHandHolder != null)
+            horizontalHandHolder.RefanAll();
+        else if (handHolder != null)
+            handHolder.EndDrag(this);
+
+        StartIdle();
+    }
+
+    private Vector2 ClampHandDragScreenPosition(Vector2 screenPosition)
+    {
+        if (!limitHandDragToViewport || interactionCamera == null)
+            return screenPosition;
+
+        Vector3 viewport = interactionCamera.ScreenToViewportPoint(
+            new Vector3(screenPosition.x, screenPosition.y, 0f)
+        );
+
+        float minX = Mathf.Clamp01(Mathf.Min(handDragViewportMin.x, handDragViewportMax.x));
+        float maxX = Mathf.Clamp01(Mathf.Max(handDragViewportMin.x, handDragViewportMax.x));
+        float minY = Mathf.Clamp01(Mathf.Min(handDragViewportMin.y, handDragViewportMax.y));
+        float maxY = Mathf.Clamp01(Mathf.Max(handDragViewportMin.y, handDragViewportMax.y));
+
+        viewport.x = Mathf.Clamp(viewport.x, minX, maxX);
+        viewport.y = Mathf.Clamp(viewport.y, minY, maxY);
+
+        Vector3 clamped = interactionCamera.ViewportToScreenPoint(viewport);
+        return new Vector2(clamped.x, clamped.y);
+    }
+
+    private void UpdateDragLean(Vector2 screenPosition)
+    {
+        if (!enableDragLean || visualRoot == null)
+            return;
+
+        if (!hasLastDragScreenPosition)
+        {
+            lastDragScreenPosition = screenPosition;
+            hasLastDragScreenPosition = true;
+            return;
+        }
+
+        float dt = Mathf.Clamp(Time.unscaledDeltaTime, 0.0001f, 0.033f);
+        Vector2 pointerVelocity =
+            (screenPosition - lastDragScreenPosition) / dt;
+        lastDragScreenPosition = screenPosition;
+
+        float speedForMax =
+            Mathf.Max(1f, dragLeanPixelsPerSecondForMax);
+
+        // The card lags behind the hand: move right -> card swings left,
+        // move up -> bottom of card trails downward.
+        float targetRoll =
+            Mathf.Clamp(
+                -pointerVelocity.x / speedForMax,
+                -1f,
+                1f
+            ) * dragLeanMaxRoll;
+
+        float targetPitch =
+            Mathf.Clamp(
+                pointerVelocity.y / speedForMax,
+                -1f,
+                1f
+            ) * dragLeanMaxPitch;
+
+        Vector2 targetLean = new Vector2(targetPitch, targetRoll);
+
+        // Underdamped spring. When the mouse suddenly stops, targetLean drops
+        // toward zero but angular velocity remains, creating the little swing
+        // past center and back that you wanted.
+        Vector2 acceleration =
+            (targetLean - currentDragLean) * dragSwingSpring -
+            dragLeanAngularVelocity * dragSwingDamping;
+
+        dragLeanAngularVelocity += acceleration * dt;
+        currentDragLean += dragLeanAngularVelocity * dt;
+
+        float pitchLimit =
+            Mathf.Max(0.1f, dragLeanMaxPitch * dragSwingOvershootLimit);
+        float rollLimit =
+            Mathf.Max(0.1f, dragLeanMaxRoll * dragSwingOvershootLimit);
+
+        currentDragLean.x = Mathf.Clamp(
+            currentDragLean.x,
+            -pitchLimit,
+            pitchLimit
+        );
+        currentDragLean.y = Mathf.Clamp(
+            currentDragLean.y,
+            -rollLimit,
+            rollLimit
+        );
+
+        visualRoot.localRotation =
+            visualBaseLocalRotation *
+            Quaternion.Euler(
+                currentDragLean.x,
+                0f,
+                currentDragLean.y
+            );
+    }
+
+    private Quaternion GetHandDragHangRotation()
+    {
+        Quaternion neutralRotation = baseRotation;
+
+        if (straightenCardWhileDragging && horizontalHandHolder != null)
+        {
+            neutralRotation =
+                horizontalHandHolder.GetStraightHandRotation();
+        }
+
+        return neutralRotation *
+               Quaternion.Euler(dragHangEulerOffset);
+    }
+
+    private void ResetDragLeanImmediate()
+    {
+        currentDragLean = Vector2.zero;
+        dragLeanAngularVelocity = Vector2.zero;
+        hasLastDragScreenPosition = false;
+
+        if (visualRoot != null)
+        {
+            visualRoot.DOKill(false);
+            visualRoot.localRotation = visualBaseLocalRotation;
+        }
+    }
+
+    private bool TryGetDragPlanePoint(Vector2 screenPosition, out Vector3 worldPoint)
+    {
+        worldPoint = Vector3.zero;
+
+        if (interactionCamera == null)
+            interactionCamera = Camera.main;
+
+        if (interactionCamera == null)
+            return false;
+
+        if (horizontalHandHolder != null)
+        {
+            // IMPORTANT: use a CAMERA-FACING plane for in-hand reordering.
+            // A table-parallel plane becomes nearly parallel to the camera ray,
+            // which is what caused dragged cards to shoot through the back wall.
+            Vector3 normal = interactionCamera.transform.forward;
+            Plane plane = new Plane(normal, basePosition);
+            Ray ray = interactionCamera.ScreenPointToRay(screenPosition);
+
+            if (!plane.Raycast(ray, out float enter))
+                return false;
+
+            worldPoint = ray.GetPoint(enter);
+            return true;
+        }
+
+        if (handHolder != null)
+        {
+            return handHolder.TryGetDragWorldPoint(
+                interactionCamera,
+                screenPosition,
+                out worldPoint
+            );
+        }
+
+        Plane fallback = new Plane(Vector3.up, basePosition);
+        Ray fallbackRay = interactionCamera.ScreenPointToRay(screenPosition);
+
+        if (!fallback.Raycast(fallbackRay, out float fallbackEnter))
+            return false;
+
+        worldPoint = fallbackRay.GetPoint(fallbackEnter);
+        return true;
+    }
+
+    public void EnterOfferedState(Transform targetSlot, float moveDuration)
+    {
+        // Compatibility method retained for older callers. New altar flow uses
+        // PlayOfferingBurn() instead.
+        pointerDown = false;
+        isPrimaryHover = false;
+        isDraggingOverOffering = false;
+        PhysicalState = CardPhysicalState.Offered;
+
+        targetWaveWorldOffset = Vector3.zero;
+        currentWaveWorldOffset = Vector3.zero;
+        targetWaveScaleBoost = 0f;
+        currentWaveScaleBoost = 0f;
+
+        KillVisualTweens();
+        KillAltarFlightTween();
+
+        transform.DOKill(false);
+
+        if (targetSlot != null)
+        {
+            float settleDuration = Mathf.Min(moveDuration, 0.09f);
+
+            transform.DOMove(targetSlot.position, settleDuration)
+                .SetEase(Ease.OutBack, 1.10f);
+
+            transform.DORotateQuaternion(targetSlot.rotation, settleDuration)
+                .SetEase(Ease.OutCubic);
+        }
+    }
+
+    /// <summary>
+    /// The REAL card lands flat in the altar recess, flashes hot, shrinks, and
+    /// disappears. CardOfferingController creates the separate translucent
+    /// preview only after this finishes.
+    /// </summary>
+    public void PlayOfferingBurn(
+        Transform burnPoint,
+        float landDuration,
+        float burnDuration,
+        Action onComplete)
+    {
+        pointerDown = false;
+        isPrimaryHover = false;
+        isDraggingOverOffering = false;
+        isReturningFromOffering = false;
+        PhysicalState = CardPhysicalState.Offered;
+        isBurningVisual = true;
+
+        targetWaveWorldOffset = Vector3.zero;
+        currentWaveWorldOffset = Vector3.zero;
+        targetWaveScaleBoost = 0f;
+        currentWaveScaleBoost = 0f;
+
+        KillVisualTweens();
+        KillAltarFlightTween();
+        transform.DOKill(false);
+
+        if (visualRoot != null)
+        {
+            visualRoot.gameObject.SetActive(true);
+            visualRoot.DOKill(false);
+            visualRoot.localScale = visualBaseLocalScale;
+        }
+
+        if (burnPoint == null)
+        {
+            isBurningVisual = false;
+            onComplete?.Invoke();
+            return;
+        }
+
+        Sequence burnSequence = DOTween.Sequence();
+        altarFlightTween = burnSequence;
+
+        // Land physically in the recess and rotate to the BurnPoint's flat pose.
+        burnSequence.Append(
+            transform.DOMove(
+                burnPoint.position,
+                landDuration
+            ).SetEase(Ease.OutBack, 1.10f)
+        );
+
+        burnSequence.Join(
+            transform.DORotateQuaternion(
+                burnPoint.rotation,
+                landDuration
+            ).SetEase(Ease.OutCubic)
+        );
+
+        // Tiny impact/pop before the card collapses into the burn.
+        if (visualRoot != null)
+        {
+            burnSequence.Append(
+                visualRoot.DOScale(
+                    visualBaseLocalScale * offeringBurnScalePop,
+                    0.045f
+                ).SetEase(Ease.OutQuad)
+            );
+        }
+
+        float burnT = 0f;
+        Tween burnColorTween = DOTween.To(
+            () => burnT,
+            value =>
+            {
+                burnT = value;
+                ApplyOfferingBurnVisual(value);
+            },
+            1f,
+            burnDuration
+        ).SetEase(Ease.InQuad);
+
+        burnSequence.Append(burnColorTween);
+
+        if (visualRoot != null)
+        {
+            burnSequence.Join(
+                visualRoot.DOScale(
+                    Vector3.zero,
+                    burnDuration
+                ).SetEase(Ease.InBack)
+            );
+        }
+
+        burnSequence.Join(
+            transform.DOPunchRotation(
+                new Vector3(0f, 0f, 2.5f),
+                burnDuration,
+                6,
+                0.25f
+            )
+        );
+
+        burnSequence.OnComplete(() =>
+        {
+            ResetOfferingBurnVisual();
+            isBurningVisual = false;
+
+            if (visualRoot != null)
+                visualRoot.gameObject.SetActive(false);
+
+            altarFlightTween = null;
+            onComplete?.Invoke();
+        });
+    }
+
+    private void ApplyOfferingBurnVisual(float t)
+    {
+        foreach (HoverRendererState state in hoverRendererStates)
+        {
+            if (state.renderer == null)
+                continue;
+
+            state.renderer.GetPropertyBlock(state.block);
+
+            Color hotBase = Color.Lerp(
+                state.baseColor,
+                offeringBurnColor,
+                Mathf.Clamp01(t * 1.15f)
+            );
+            hotBase.a = state.baseColor.a;
+
+            if (state.hasBaseColor)
+                state.block.SetColor("_BaseColor", hotBase);
+
+            if (state.hasColor)
+                state.block.SetColor("_Color", hotBase);
+
+            if (state.hasEmission)
+            {
+                Color hotEmission =
+                    state.baseEmission +
+                    offeringBurnColor *
+                    (offeringBurnEmissionStrength * t);
+
+                state.block.SetColor("_EmissionColor", hotEmission);
+            }
+
+            state.renderer.SetPropertyBlock(state.block);
+        }
+    }
+
+    private void ResetOfferingBurnVisual()
+    {
+        foreach (HoverRendererState state in hoverRendererStates)
+        {
+            if (state.renderer == null)
+                continue;
+
+            state.renderer.GetPropertyBlock(state.block);
+
+            if (state.hasBaseColor)
+                state.block.SetColor("_BaseColor", state.baseColor);
+
+            if (state.hasColor)
+                state.block.SetColor("_Color", state.baseColor);
+
+            if (state.hasEmission)
+                state.block.SetColor("_EmissionColor", state.baseEmission);
+
+            state.renderer.SetPropertyBlock(state.block);
+        }
+    }
+
+    public void ReturnToHandState()
+    {
+        pointerDown = false;
+        isPrimaryHover = false;
+        isDraggingOverOffering = false;
+        isReturningFromOffering = false;
+        KillAltarFlightTween();
+        PhysicalState = CardPhysicalState.InHand;
+        isBurningVisual = false;
+
+        if (visualRoot != null)
+            visualRoot.gameObject.SetActive(true);
+
+        ResetOfferingBurnVisual();
+        ResetVisualImmediate();
+        StartIdle();
+    }
+
+    public void EnterSacrificingState()
+    {
+        pointerDown = false;
+        isPrimaryHover = false;
+        isDraggingOverOffering = false;
+        isReturningFromOffering = false;
+        KillAltarFlightTween();
+        PhysicalState = CardPhysicalState.Sacrificing;
+        KillVisualTweens();
+    }
+
+    public void SetOfferingController(CardOfferingController controller)
+    {
+        offeringController = controller;
+    }
+
+    public void SetHandHolder(HandHolder3D newHandHolder)
+    {
+        handHolder = newHandHolder;
+    }
+
+    public void TweenRootTo(
+        Vector3 position,
+        Quaternion rotation,
+        float duration,
+        Ease ease)
+    {
+        SetBasePose(position, rotation);
+    }
+
+    private void UpdateHandRootPose()
+    {
+        if (!hasBasePose || PhysicalState != CardPhysicalState.InHand)
+            return;
+
+        float waveT = 1f - Mathf.Exp(-22f * Time.deltaTime);
+
+        currentWaveWorldOffset = Vector3.Lerp(
+            currentWaveWorldOffset,
+            targetWaveWorldOffset,
+            waveT
+        );
+
+        Vector3 targetPosition =
+            basePosition + currentWaveWorldOffset;
+
+        float moveT =
+            1f - Mathf.Exp(-handMoveSpeed * Time.deltaTime);
+
+        float rotateT =
+            1f - Mathf.Exp(-handRotateSpeed * Time.deltaTime);
+
+        transform.position = Vector3.Lerp(
+            transform.position,
+            targetPosition,
+            moveT
+        );
+
+        transform.rotation = Quaternion.Slerp(
+            transform.rotation,
+            baseRotation,
+            rotateT
+        );
+    }
+
+    private void UpdateWaveScale()
+    {
+        if (visualRoot == null)
+            return;
+
+        float target =
+            PhysicalState == CardPhysicalState.InHand
+                ? targetWaveScaleBoost
+                : 0f;
+
+        float scaleT = 1f - Mathf.Exp(-22f * Time.deltaTime);
+
+        currentWaveScaleBoost = Mathf.Lerp(
+            currentWaveScaleBoost,
+            target,
+            scaleT
+        );
+
+        visualRoot.localScale =
+            visualBaseLocalScale * (1f + currentWaveScaleBoost);
+    }
+
+    private void AnimateHoverIn()
+    {
+        if (visualRoot == null ||
+            PhysicalState != CardPhysicalState.InHand)
+            return;
+
+        KillVisualTweens();
+
+        Vector3 targetPosition =
+            visualBaseLocalPosition + hoverLocalOffset;
+
+        Quaternion targetRotation =
+            visualBaseLocalRotation *
+            Quaternion.Euler(hoverLocalRotation);
+
+        visualTween = DOTween.Sequence();
+
+        visualTween.Join(
+            visualRoot.DOLocalMove(
+                targetPosition,
+                hoverInDuration
+            ).SetEase(hoverInEase)
+        );
+
+        visualTween.Join(
+            visualRoot.DOLocalRotateQuaternion(
+                targetRotation,
+                hoverInDuration
+            ).SetEase(hoverInEase)
+        );
+    }
+
+    private void AnimateHoverOut()
+    {
+        if (visualRoot == null ||
+            PhysicalState != CardPhysicalState.InHand)
+            return;
+
+        KillVisualTweens();
+
+        visualTween = DOTween.Sequence();
+
+        visualTween.Join(
+            visualRoot.DOLocalMove(
+                visualBaseLocalPosition,
+                hoverOutDuration
+            ).SetEase(hoverOutEase)
+        );
+
+        visualTween.Join(
+            visualRoot.DOLocalRotateQuaternion(
+                visualBaseLocalRotation,
+                hoverOutDuration
+            ).SetEase(hoverOutEase)
+        );
+
+        visualTween.OnComplete(StartIdle);
+    }
+
+    private void StartIdle()
+    {
+        if (!enableIdle ||
+            visualRoot == null ||
+            PhysicalState != CardPhysicalState.InHand ||
+            isPrimaryHover)
+            return;
+
+        KillIdleTweens();
+
+        float duration =
+            UnityEngine.Random.Range(idleDurationMin, idleDurationMax);
+
+        float delay =
+            UnityEngine.Random.Range(idleStartDelayMin, idleStartDelayMax);
+
+        // Bob ONLY along the table normal. This keeps the card's visual child
+        // from drifting sideways or tilting through neighboring cards.
+        Vector3 worldTableUp =
+            horizontalHandHolder != null
+                ? horizontalHandHolder.transform.up
+                : Vector3.up;
+
+        Vector3 safeLocalDirection =
+            transform.InverseTransformDirection(worldTableUp).normalized;
+
+        Vector3 positionTarget =
+            visualBaseLocalPosition + safeLocalDirection * idleLiftAmount;
+
+        idleMoveTween = visualRoot
+            .DOLocalMove(positionTarget, duration)
+            .SetDelay(delay)
+            .SetEase(Ease.InOutSine)
+            .SetLoops(-1, LoopType.Yoyo);
+    }
+
+    private void InitializeHoverBrightness()
+    {
+        hoverRendererStates.Clear();
+
+        Renderer[] renderers = hoverBrightnessRenderers;
+
+        if (renderers == null || renderers.Length == 0)
+        {
+            renderers =
+                visualRoot != null
+                    ? visualRoot.GetComponentsInChildren<Renderer>(true)
+                    : GetComponentsInChildren<Renderer>(true);
+        }
+
+        foreach (Renderer rendererToUse in renderers)
+        {
+            if (rendererToUse == null)
+                continue;
+
+            Material material = rendererToUse.sharedMaterial;
+
+            if (material == null)
+                continue;
+
+            HoverRendererState state =
+                new HoverRendererState();
+
+            state.renderer = rendererToUse;
+            state.block = new MaterialPropertyBlock();
+
+            if (material.HasProperty("_BaseColor"))
+            {
+                state.hasBaseColor = true;
+                state.baseColor = material.GetColor("_BaseColor");
+            }
+            else if (material.HasProperty("_Color"))
+            {
+                state.hasColor = true;
+                state.baseColor = material.GetColor("_Color");
+            }
+
+            if (material.HasProperty("_EmissionColor"))
+            {
+                state.hasEmission = true;
+                state.baseEmission = material.GetColor("_EmissionColor");
+
+                // URP Lit needs this keyword enabled before a per-renderer
+                // emission color can actually contribute light.
+                material.EnableKeyword("_EMISSION");
+            }
+
+            if (state.hasBaseColor ||
+                state.hasColor ||
+                state.hasEmission)
+            {
+                hoverRendererStates.Add(state);
+            }
+        }
+    }
+
+    private void UpdateHoverBrightness()
+    {
+        if (isBurningVisual)
+            return;
+
+        float target =
+            (isPrimaryHover || PhysicalState == CardPhysicalState.Dragging)
+                ? 1f
+                : 0f;
+
+        hoverBrightness01 = Mathf.MoveTowards(
+            hoverBrightness01,
+            target,
+            hoverBrightnessSpeed * Time.deltaTime
+        );
+
+        if (hoverRendererStates.Count == 0)
+            return;
+
+        foreach (HoverRendererState state in hoverRendererStates)
+        {
+            if (state.renderer == null)
+                continue;
+
+            state.renderer.GetPropertyBlock(state.block);
+
+            Color brightColor =
+                state.baseColor * hoverBrightnessMultiplier;
+
+            // Preserve transparency if the card material uses alpha.
+            brightColor.a = state.baseColor.a;
+
+            Color currentBase =
+                Color.Lerp(
+                    state.baseColor,
+                    brightColor,
+                    hoverBrightness01
+                );
+
+            if (state.hasBaseColor)
+                state.block.SetColor("_BaseColor", currentBase);
+
+            if (state.hasColor)
+                state.block.SetColor("_Color", currentBase);
+
+            if (state.hasEmission)
+            {
+                Color hoverEmission =
+                    state.baseEmission +
+                    state.baseColor * hoverEmissionStrength;
+
+                hoverEmission.a = 1f;
+
+                state.block.SetColor(
+                    "_EmissionColor",
+                    Color.Lerp(
+                        state.baseEmission,
+                        hoverEmission,
+                        hoverBrightness01
+                    )
+                );
+            }
+
+            state.renderer.SetPropertyBlock(state.block);
+        }
+    }
+
+    private void PlayHoverSound()
+    {
+        if (hoverAudioSource == null || hoverSound == null)
+            return;
+
+        hoverAudioSource.pitch =
+            UnityEngine.Random.Range(minHoverPitch, maxHoverPitch);
+
+        hoverAudioSource.PlayOneShot(
+            hoverSound,
+            hoverVolume
+        );
+    }
+
+    private void ResetVisualImmediate()
+    {
+        if (visualRoot == null)
+            return;
+
+        KillVisualTweens();
+
+        visualRoot.localPosition = visualBaseLocalPosition;
+        visualRoot.localRotation = visualBaseLocalRotation;
+        visualRoot.localScale = visualBaseLocalScale;
+    }
+
+    private void KillVisualTweens()
+    {
+        if (visualTween != null && visualTween.IsActive())
+            visualTween.Kill(false);
+
+        visualTween = null;
+        KillIdleTweens();
+    }
+
+    private void KillIdleTweens()
+    {
+        if (idleMoveTween != null && idleMoveTween.IsActive())
+            idleMoveTween.Kill(false);
+
+        idleMoveTween = null;
     }
 }

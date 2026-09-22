@@ -19,13 +19,6 @@ using TMPro;
 /// └── DecayText
 ///
 /// Card3DRoot should also have a BoxCollider for future hover/click behavior.
-///
-/// RUNTIME AUTO-REFRESH: Update() cheaply checks whether the source Card's
-/// value/suit/decay has changed since the last frame (e.g. GameManager
-/// reused this hand slot and dealt a new card into it via AssignNextCard)
-/// and re-pulls the visuals automatically. This means GameManager doesn't
-/// need any changes to support the 3D layer — it can keep writing to the
-/// old Card exactly like it always has.
 /// </summary>
 public class Card3DView : MonoBehaviour
 {
@@ -35,11 +28,9 @@ public class Card3DView : MonoBehaviour
 
     [Header("Text References")]
     [SerializeField] private TMP_Text faceValueText;
-    [SerializeField] private TMP_Text faceValueTextBottomRight;
     [SerializeField] private TMP_Text suitTopLeftText;
     [SerializeField] private TMP_Text suitBottomRightText;
     [SerializeField] private TMP_Text pointValueText;
-    [SerializeField] private TMP_Text pointValueTextBottomRight;
     [SerializeField] private TMP_Text decayText;
 
     [Header("Suit Colors")]
@@ -47,16 +38,19 @@ public class Card3DView : MonoBehaviour
     [SerializeField] private Color blackSuitColor = new Color(0.11f, 0.09f, 0.07f);
 
     [Header("Decay Colors")]
-    [SerializeField] private Color normalDecayColor = new Color(0.20f, 0.65f, 0.25f);
-    [SerializeField] private Color fullyDecayedColor = new Color(0.85f, 0.15f, 0.15f);
+    [SerializeField] private Color normalDecayColor = new Color(0.11f, 0.09f, 0.07f);
+    [SerializeField] private Color fullyDecayedColor = new Color(0.35f, 0.05f, 0.05f);
+
+    [Header("3D Text Sync")]
+    [Tooltip("Keeps every FaceValue / PointValue / Suit / Decay TMP child synchronized with the real Card data. This runs after gameplay scripts have had a chance to assign the card for the frame.")]
+    [SerializeField] private bool syncNamedMirroredText = true;
+
+    private int lastCardValue = int.MinValue;
+    private int lastPointValue = int.MinValue;
+    private int lastDecayLevel = int.MinValue;
+    private string lastSuit;
 
     public Card SourceCard => sourceCard;
-
-    // Cache for cheap change-detection in Update()
-    private int _lastValue = int.MinValue;
-    private string _lastSuit = null;
-    private int _lastDecayLevel = int.MinValue;
-    private bool _lastIsDecayed;
 
     /// <summary>
     /// Call this when spawning/creating the 3D card to link it to an existing Card.
@@ -64,34 +58,24 @@ public class Card3DView : MonoBehaviour
     public void Initialize(Card card)
     {
         sourceCard = card;
+        InvalidateVisualSnapshot();
         RefreshVisuals();
-        CacheState();
     }
 
-    void Update()
+    private void LateUpdate()
     {
-        if (sourceCard == null) return;
+        if (sourceCard == null)
+            return;
 
-        // Cheap diff — only touch TMP text (which allocates/relayouts) when
-        // something actually changed, e.g. GameManager just dealt a new
-        // card into this reused hand slot.
-        if (sourceCard.cardValue != _lastValue ||
-            sourceCard.cardSuit  != _lastSuit  ||
-            sourceCard.decayLevel != _lastDecayLevel ||
-            sourceCard.isDecayed  != _lastIsDecayed)
+        int pointValue = sourceCard.PointValue;
+
+        if (sourceCard.cardValue != lastCardValue ||
+            pointValue != lastPointValue ||
+            sourceCard.decayLevel != lastDecayLevel ||
+            sourceCard.cardSuit != lastSuit)
         {
             RefreshVisuals();
-            CacheState();
         }
-    }
-
-    void CacheState()
-    {
-        if (sourceCard == null) return;
-        _lastValue      = sourceCard.cardValue;
-        _lastSuit       = sourceCard.cardSuit;
-        _lastDecayLevel = sourceCard.decayLevel;
-        _lastIsDecayed  = sourceCard.isDecayed;
     }
 
     /// <summary>
@@ -103,6 +87,7 @@ public class Card3DView : MonoBehaviour
         if (sourceCard == null)
         {
             ClearVisuals();
+            InvalidateVisualSnapshot();
             return;
         }
 
@@ -110,44 +95,104 @@ public class Card3DView : MonoBehaviour
         string suit = sourceCard.cardSuit;
         int pointValue = sourceCard.PointValue;
         int decayLevel = sourceCard.decayLevel;
+        Color suitColor = IsRedSuit(suit) ? redSuitColor : blackSuitColor;
 
+        // Keep the original Inspector references intact.
         if (faceValueText != null)
-        {
             faceValueText.text = displayValue;
-            faceValueText.color = IsRedSuit(suit) ? redSuitColor : blackSuitColor;
-        }
-
-        if (faceValueTextBottomRight != null)
-        {
-            faceValueTextBottomRight.text = displayValue;
-            faceValueTextBottomRight.color = IsRedSuit(suit) ? redSuitColor : blackSuitColor;
-        }
 
         if (pointValueText != null)
             pointValueText.text = pointValue.ToString();
 
-        if (pointValueTextBottomRight != null)
-            pointValueTextBottomRight.text = pointValue.ToString();
-
-        Color suitColor = IsRedSuit(suit) ? redSuitColor : blackSuitColor;
-
         if (suitTopLeftText != null)
-        {
-            suitTopLeftText.text = suit;
-            suitTopLeftText.color = suitColor;
-        }
+            ForceSuitVisible(suitTopLeftText, suit, suitColor);
 
         if (suitBottomRightText != null)
-        {
-            suitBottomRightText.text = suit;
-            suitBottomRightText.color = suitColor;
-        }
+            ForceSuitVisible(suitBottomRightText, suit, suitColor);
 
         if (decayText != null)
         {
             decayText.text = decayLevel > 0 ? decayLevel.ToString() : "";
             decayText.color = sourceCard.isDecayed ? fullyDecayedColor : normalDecayColor;
         }
+
+        // Your actual prefab has separate top-left AND bottom-right text
+        // objects. Update all of them by name, but deliberately do not touch
+        // their font materials, outline, glow, size, or layout.
+        if (syncNamedMirroredText)
+        {
+            foreach (TMP_Text textMesh in GetComponentsInChildren<TMP_Text>(true))
+            {
+                if (textMesh == null)
+                    continue;
+
+                string lowerName = textMesh.gameObject.name.ToLowerInvariant();
+
+                if (lowerName.Contains("facevalue"))
+                {
+                    textMesh.text = displayValue;
+                }
+                else if (lowerName.Contains("pointvalue"))
+                {
+                    textMesh.text = pointValue.ToString();
+                }
+                else if (lowerName.Contains("suit"))
+                {
+                    ForceSuitVisible(textMesh, suit, suitColor);
+                }
+                else if (lowerName.Contains("decay"))
+                {
+                    textMesh.text = decayLevel > 0 ? decayLevel.ToString() : "";
+                    textMesh.color = sourceCard.isDecayed
+                        ? fullyDecayedColor
+                        : normalDecayColor;
+                }
+            }
+        }
+
+        lastCardValue = sourceCard.cardValue;
+        lastPointValue = pointValue;
+        lastDecayLevel = decayLevel;
+        lastSuit = suit;
+    }
+
+    private void ForceSuitVisible(
+        TMP_Text textMesh,
+        string suit,
+        Color suitColor)
+    {
+        if (textMesh == null)
+            return;
+
+        // A few of the recent preview/readability experiments could leave a
+        // TMP object or its MeshRenderer disabled. The suit data itself was
+        // still correct; the top-left glyph simply was not being drawn.
+        if (!textMesh.gameObject.activeSelf)
+            textMesh.gameObject.SetActive(true);
+
+        textMesh.enabled = true;
+
+        Renderer textRenderer = textMesh.GetComponent<Renderer>();
+        if (textRenderer != null)
+            textRenderer.enabled = true;
+
+        Color visibleColor = suitColor;
+        visibleColor.a = 1f;
+
+        textMesh.text = suit;
+        textMesh.color = visibleColor;
+
+        // Rebuild immediately so a re-enabled top-left TMP doesn't wait a
+        // frame before showing its glyph.
+        textMesh.ForceMeshUpdate(true, true);
+    }
+
+    private void InvalidateVisualSnapshot()
+    {
+        lastCardValue = int.MinValue;
+        lastPointValue = int.MinValue;
+        lastDecayLevel = int.MinValue;
+        lastSuit = null;
     }
 
     /// <summary>
