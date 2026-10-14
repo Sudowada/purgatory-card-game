@@ -405,6 +405,7 @@ public class CardOfferingController : MonoBehaviour
         originalHandIndices[card] = handIndex;
         offeredCards.Add(card);
         card.SetOfferingController(this);
+        GetComponent<RandomEnemyTelegraph>()?.ResolveOfferedCard(card);
 
         burnInProgress = true;
 
@@ -433,6 +434,7 @@ public class CardOfferingController : MonoBehaviour
 
         Card3DInteractable card = offeredCards[offeredCards.Count - 1];
         offeredCards.RemoveAt(offeredCards.Count - 1);
+        GetComponent<RandomEnemyTelegraph>()?.UndoStagedCard(card);
 
         RemovePreviewFor(card);
         ReturnCardToHand(card);
@@ -449,6 +451,7 @@ public class CardOfferingController : MonoBehaviour
         card.Deselect();
 
         offeredCards.Remove(card);
+        GetComponent<RandomEnemyTelegraph>()?.UndoStagedCard(card);
         RemovePreviewFor(card);
         ReturnCardToHand(card);
         RecenterPreviewVisuals(recenterTweenDuration);
@@ -463,6 +466,7 @@ public class CardOfferingController : MonoBehaviour
         }
 
         inputLocked = true;
+        GetComponent<RandomEnemyTelegraph>()?.ConfirmStagedBlocks();
         returningThisOffer.Clear();
         List<Card> confirmed = new List<Card>(MaximumCardsToOffer);
 
