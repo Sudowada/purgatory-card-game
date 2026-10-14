@@ -74,6 +74,13 @@ public sealed class CardAttackVisuals : MonoBehaviour
         shieldEndTime = Time.time + shieldDuration;
     }
 
+    /// <summary>Undo should immediately end the block effect without locking card input.</summary>
+    public void CancelShieldBlock()
+    {
+        if (shieldInstance != null) Destroy(shieldInstance);
+        shieldInstance = null;
+    }
+
     private void LateUpdate()
     {
         if (attackInstance != null)
