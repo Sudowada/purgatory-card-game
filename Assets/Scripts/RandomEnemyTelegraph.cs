@@ -11,6 +11,7 @@ public sealed class RandomEnemyTelegraph : MonoBehaviour
     [SerializeField] private HorizontalCardHolder hand;
     [SerializeField, Range(1, 3)] private int targetsPerAttack = 2;
     private readonly HashSet<Card> targets = new HashSet<Card>();
+    private readonly HashSet<Card> stagedBlocks = new HashSet<Card>();
 
     public bool IsTargeted(Card card) => card != null && targets.Contains(card);
 
@@ -37,9 +38,24 @@ public sealed class RandomEnemyTelegraph : MonoBehaviour
 
     public void ResolveOfferedCard(Card3DInteractable card)
     {
-        if (card == null || card.SourceCard == null || !targets.Remove(card.SourceCard)) return;
+        if (card == null || card.SourceCard == null || !targets.Contains(card.SourceCard)) return;
+        stagedBlocks.Add(card.SourceCard);
         var visuals = card.GetComponent<CardAttackVisuals>();
         if (visuals != null) visuals.PlayShieldBlock();
+    }
+
+    public void UndoStagedCard(Card3DInteractable card)
+    {
+        if (card == null || card.SourceCard == null) return;
+        if (!stagedBlocks.Remove(card.SourceCard)) return;
+        var visuals = card.GetComponent<CardAttackVisuals>();
+        if (visuals != null) { visuals.CancelShieldBlock(); visuals.SetTargeted(true); }
+    }
+
+    public void ConfirmStagedBlocks()
+    {
+        foreach (var card in stagedBlocks) targets.Remove(card);
+        stagedBlocks.Clear();
     }
 
     public void ClearTelegraph()
@@ -51,6 +67,7 @@ public sealed class RandomEnemyTelegraph : MonoBehaviour
                 if (visuals != null) visuals.SetTargeted(false);
             }
         targets.Clear();
+        stagedBlocks.Clear();
     }
 
     private void OnDisable() => ClearTelegraph();
