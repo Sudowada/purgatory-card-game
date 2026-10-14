@@ -200,6 +200,7 @@ public class GameManager : MonoBehaviour
         if (GetComponent<SettingsUI>()        == null) gameObject.AddComponent<SettingsUI>();
         if (GetComponent<RoundSelectScreen>() == null) gameObject.AddComponent<RoundSelectScreen>();
     }
+    private RandomEnemyTelegraph enemyTelegraph;
     void Start()
     {
         Debug.Log("[HandFlow] GameManager Start — preparing hand initialization.");
@@ -224,6 +225,11 @@ public class GameManager : MonoBehaviour
             Debug.LogError("[HandFlow] No hand cards spawned. Check Hand Holder and Card 3D Prefab.");
             yield break;
         }
+        var offeringController = FindFirstObjectByType<CardOfferingController>();
+        GameObject telegraphOwner = offeringController != null ? offeringController.gameObject : gameObject;
+        enemyTelegraph = telegraphOwner.GetComponent<RandomEnemyTelegraph>();
+        if (enemyTelegraph == null) enemyTelegraph = telegraphOwner.AddComponent<RandomEnemyTelegraph>();
+        enemyTelegraph.Initialize(handHolder);
         RegisterCardEvents();
         handInitialized = true;
         Debug.Log($"[HandFlow] Initialized {handHolder.cards.Count} cards; state={GameStateManager.Instance?.CurrentState}.");
@@ -676,6 +682,7 @@ public class GameManager : MonoBehaviour
                 InfectRandomCard();
             _queuedDecayPenalty = 0;
         }
+        enemyTelegraph?.ClearTelegraph();
         roundNumber++;
         stageNumber = Mathf.Clamp(roundNumber, 1, 8);
         handsLeft   = maxHands;
@@ -708,6 +715,7 @@ public class GameManager : MonoBehaviour
         {
             handHolder.SetHandVisible(true);
             if (cardAnimator != null) StartCoroutine(cardAnimator.DrawCards(dealtCards));
+            enemyTelegraph?.RollNextTelegraph();
         }
         ShowMessage($"Round {roundNumber} (Stage {stageNumber}) | Enemy: {currentEnemyCard} | Target: {currentThreshold}");
     }
@@ -765,6 +773,7 @@ public class GameManager : MonoBehaviour
         else handHolder.SetHandVisible(false);
         offering.SetResolutionInputLocked(false);
         isAnimating = false;
+        enemyTelegraph?.RollNextTelegraph();
         Debug.Log($"[HandFlow] Deal finished; visible={IsSeated}, handSize={handHolder.cards.Count}.");
     }
     // ── Play ──────────────────────────────────────────────────────────────────
@@ -832,10 +841,8 @@ public class GameManager : MonoBehaviour
             yield return new WaitForSeconds(0.3f);
         bool frozen = ConsumableSystem.Instance != null
             && ConsumableSystem.Instance.decayFrozenThisRound;
-        if (!frozen)
-            ApplyDecayToHand(toPlay);
-        else
-            ConsumableSystem.Instance.ConsumeDecayFreeze();
+        enemyTelegraph?.ResolveAttack(toPlay, frozen);
+        if (frozen) ConsumableSystem.Instance.ConsumeDecayFreeze();
         yield return new WaitForSeconds(0.1f);
         var freeSlots = toPlay.ToList();
         freeSlots.Sort((a, b) =>
@@ -848,6 +855,7 @@ public class GameManager : MonoBehaviour
             yield return new WaitForSeconds(0.2f);
         UpdateHUD();
         deckVisual?.UpdateCounts(currentDeck.Count - deckIndex, 0);
+        enemyTelegraph?.RollNextTelegraph();
         isAnimating = false;
     }
     // ── Play (from the 3D altar / CardOfferingController) ───────────────────────
@@ -927,10 +935,8 @@ public class GameManager : MonoBehaviour
         yield return new WaitForSeconds(0.3f);
         bool frozen = ConsumableSystem.Instance != null
             && ConsumableSystem.Instance.decayFrozenThisRound;
-        if (!frozen)
-            ApplyDecayToHand(toPlay);
-        else
-            ConsumableSystem.Instance.ConsumeDecayFreeze();
+        enemyTelegraph?.ResolveAttack(toPlay, frozen);
+        if (frozen) ConsumableSystem.Instance.ConsumeDecayFreeze();
         yield return new WaitForSeconds(0.1f);
         // Finish scoring before refilling or opening the next-round screen.
         yield return scoreAnimation;
@@ -938,6 +944,7 @@ public class GameManager : MonoBehaviour
         var offering = FindFirstObjectByType<CardOfferingController>();
         if (onComplete != null && offering != null)
             yield return new WaitUntil(() => !offering.InputLocked);
+        if (ShouldRefillOffering) enemyTelegraph?.RollNextTelegraph();
         RefreshOfferingHUD();
         isAnimating = false;
         deferOfferingThresholdTransition = false;
@@ -950,6 +957,7 @@ public class GameManager : MonoBehaviour
     private void OnThresholdReached()
     {
         if (runFinished || roundEndInProgress) return;
+        enemyTelegraph?.ClearTelegraph();
         roundEndInProgress = true;
         roundStarted = false;
         SetInputBlocked(true);
@@ -1140,45 +1148,6 @@ public class GameManager : MonoBehaviour
         StartRound();
     }
     // ── Decay ─────────────────────────────────────────────────────────────────
-    private void ApplyDecayToHand(List<Card> justPlayed)
-    {
-        int  decayCount = RelicSystem.Instance != null ? RelicSystem.Instance.GetDecayCount()     : 3;
-        bool rotOnStack = RelicSystem.Instance != null && RelicSystem.Instance.GetDecayRotOnStack();
-        bool decayAll   = RelicSystem.Instance != null && RelicSystem.Instance.GetDecayAll();
-        List<Card> hand = handHolder.cards.Where(c => !justPlayed.Contains(c)).ToList();
-        if (decayAll)
-        {
-            foreach (var card in hand)
-            {
-                bool justFullyDecayed = card.ApplyDecay();
-                if (justFullyDecayed)
-                    ShowMessage($"{card.GetDisplayValue()}{card.cardSuit} fully decayed — must play it!");
-            }
-        }
-        else
-        {
-            List<Card> alreadyDecayed = hand.Where(c =>  c.isDecayed).ToList();
-            List<Card> healthy        = hand.Where(c => !c.isDecayed).ToList();
-            for (int i = healthy.Count - 1; i > 0; i--)
-            {
-                int j = Random.Range(0, i + 1);
-                (healthy[i], healthy[j]) = (healthy[j], healthy[i]);
-            }
-            List<Card> targets = new List<Card>(alreadyDecayed);
-            targets.AddRange(healthy);
-            int actual = Mathf.Min(decayCount, targets.Count);
-            for (int i = 0; i < actual; i++)
-            {
-                bool justFullyDecayed = rotOnStack
-                    ? targets[i].ForceFullDecay()
-                    : targets[i].ApplyDecay();
-                if (justFullyDecayed)
-                    ShowMessage($"{targets[i].GetDisplayValue()}{targets[i].cardSuit} fully decayed — must play it!");
-            }
-        }
-        if (handHolder.cards.Count > 0 && handHolder.cards.All(c => c.isDecayed) && roundScore < currentThreshold)
-            TriggerGameOver();
-    }
     // ── HUD ───────────────────────────────────────────────────────────────────
     private void UpdateHUD()
     {
@@ -1277,6 +1246,7 @@ public class GameManager : MonoBehaviour
     private void FinishRun(bool won)
     {
         if (runFinished) return;
+        enemyTelegraph?.ClearTelegraph();
         runFinished = true; runWon = won; endScreenDismissed = false;
         roundStarted = false; pendingRoundStart = false; _waitingToReturn = false;
         inShop = false;

@@ -275,6 +275,7 @@ public class CardOfferingController : MonoBehaviour
     private Transform runtimePreviewRoot;
     private bool inputLocked;
     private bool burnInProgress;
+    private Card3DInteractable burningCard;
 
     // Runtime play-count override for relics / run modifiers.
     // -1 means "use baseMaximumCardsToOffer".
@@ -349,7 +350,7 @@ public class CardOfferingController : MonoBehaviour
         if (confirmButton != null)
             confirmButton.SetReadyToOffer(CanConfirm);
 
-        if (inputLocked || burnInProgress)
+        if (inputLocked)
             return;
 
         HandlePreviewPointerInput();
@@ -408,6 +409,7 @@ public class CardOfferingController : MonoBehaviour
         GetComponent<RandomEnemyTelegraph>()?.ResolveOfferedCard(card);
 
         burnInProgress = true;
+        burningCard = card;
 
         // Snapshot the card visual BEFORE the physical card shrinks to zero.
         PrepareHiddenPreviewFor(card);
@@ -420,7 +422,7 @@ public class CardOfferingController : MonoBehaviour
             {
                 RevealPreparedPreviewFor(card);
                 RecenterPreviewVisuals(recenterTweenDuration);
-                burnInProgress = false;
+                if (burningCard == card) { burnInProgress = false; burningCard = null; }
             }
         );
 
@@ -429,12 +431,13 @@ public class CardOfferingController : MonoBehaviour
 
     public void UndoLastStage()
     {
-        if (inputLocked || burnInProgress || offeredCards.Count == 0)
+        if (inputLocked || offeredCards.Count == 0)
             return;
 
         Card3DInteractable card = offeredCards[offeredCards.Count - 1];
         offeredCards.RemoveAt(offeredCards.Count - 1);
         GetComponent<RandomEnemyTelegraph>()?.UndoStagedCard(card);
+        if (burningCard == card) { burnInProgress = false; burningCard = null; }
 
         RemovePreviewFor(card);
         ReturnCardToHand(card);
@@ -443,7 +446,7 @@ public class CardOfferingController : MonoBehaviour
 
     public void RemoveSpecificCard(Card3DInteractable card)
     {
-        if (inputLocked || burnInProgress || card == null || !offeredCards.Contains(card))
+        if (inputLocked || card == null || !offeredCards.Contains(card))
             return;
 
         // Clicking a preview means "de-select / unstage this card".
@@ -452,6 +455,7 @@ public class CardOfferingController : MonoBehaviour
 
         offeredCards.Remove(card);
         GetComponent<RandomEnemyTelegraph>()?.UndoStagedCard(card);
+        if (burningCard == card) { burnInProgress = false; burningCard = null; }
         RemovePreviewFor(card);
         ReturnCardToHand(card);
         RecenterPreviewVisuals(recenterTweenDuration);

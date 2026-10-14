@@ -226,11 +226,14 @@ public class HorizontalCardHolder : MonoBehaviour
         return true;
     }
 
+    public bool IsCardVisible(Card card) => _slots.Exists(slot => slot.card == card && slot.visible);
+
     private void SetSlotVisible(CardSlot slot, bool visible)
     {
         // Keep the Card, Card3DView and interactable scripts alive so their
         // Start methods, data updates and event initialization can finish.
         slot.visible = visible;
+        slot.interactable?.GetComponent<CardAttackVisuals>()?.SetPresentationVisible(visible);
         foreach (var entry in slot.rendererVisibility)
             if (entry.Key != null) entry.Key.enabled = visible && entry.Value;
         foreach (var entry in slot.colliderVisibility)
