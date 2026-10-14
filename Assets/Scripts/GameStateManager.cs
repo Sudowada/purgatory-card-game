@@ -14,6 +14,8 @@ public class GameStateManager : MonoBehaviour
 
     public GameState CurrentState { get; private set; }
 
+    public event System.Action<GameState> OnStateChanged;
+
     [Header("Startup")]
     [SerializeField] private GameState startingState = GameState.Exploration;
 
@@ -150,6 +152,7 @@ public class GameStateManager : MonoBehaviour
             }
         }
 
+        OnStateChanged?.Invoke(newState);
         Debug.Log($"[GameStateManager] State -> {newState}");
     }
 

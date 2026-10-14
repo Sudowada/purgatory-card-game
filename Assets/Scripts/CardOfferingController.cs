@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using DG.Tweening;
 using TMPro;
@@ -40,6 +41,24 @@ public class CardOfferingController : MonoBehaviour
 
     [Tooltip("How quickly the physical card flashes/shrinks away after landing.")]
     [SerializeField] private float burnAwayDuration = 0.18f;
+
+    [Tooltip("Optional pixel-flame burst played at the altar the moment an offering is confirmed.")]
+    [SerializeField] private AltarFlameEffect altarFlameEffect;
+
+    [Header("Draw From Deck")]
+    [Tooltip("Assign an empty Transform just above the physical deck. Fresh replacements start here.")]
+    [SerializeField] private Transform deckDrawPoint;
+    [SerializeField, Min(0f)] private float replacementDrawStagger = 0.07f;
+    [SerializeField, Min(0.1f)] private float refillSettleDuration = 0.45f;
+    public Transform DeckDrawPoint => deckDrawPoint;
+    public float RefillSettleDuration => refillSettleDuration;
+    public float ReplacementDrawStagger => replacementDrawStagger;
+
+    // Exhausted/round-end slots stay outside the hand until the next round.
+    private readonly Dictionary<Card3DInteractable, int> emptySlots =
+        new Dictionary<Card3DInteractable, int>();
+    private readonly HashSet<Card3DInteractable> returningThisOffer =
+        new HashSet<Card3DInteractable>();
 
     [Header("Floating Preview")]
     [Tooltip("Controls the preview row center. Position = row center, rotation = base angle for the preview cards.")]
@@ -172,7 +191,7 @@ public class CardOfferingController : MonoBehaviour
     [Header("Play Count")]
     [Tooltip("Normally 3 cards are required before the Offering can be confirmed.")]
     [Min(1)]
-    [SerializeField] private int minimumCardsToConfirm = 3;
+    [SerializeField] private int minimumCardsToConfirm = 1;
 
     [Tooltip("Normal maximum number of cards that may be staged. A relic can override this at runtime, e.g. 4.")]
     [Min(1)]
@@ -192,7 +211,9 @@ public class CardOfferingController : MonoBehaviour
     [SerializeField] private bool spaceConfirms = true;
 
     [Header("Optional 3D Confirm Button")]
-    [SerializeField] private OfferingConfirmButton3D confirmButton;
+    [Tooltip("The physical Offer button. Space-to-confirm will trigger its press " +
+             "so the mechanical animation and sounds play even from keyboard input.")]
+    [SerializeField] private OfferButtonInteractable confirmButton;
 
     private readonly List<Card3DInteractable> offeredCards =
         new List<Card3DInteractable>(4);
@@ -281,11 +302,33 @@ public class CardOfferingController : MonoBehaviour
     public bool CanConfirm =>
         !inputLocked &&
         !burnInProgress &&
+        GameManager.Instance != null &&
+        GameManager.Instance.CanPlayOffering &&
+        deckDrawPoint != null &&
         offeredCards.Count >= Mathf.Max(1, minimumCardsToConfirm) &&
         offeredCards.Count <= MaximumCardsToOffer &&
         previewEntries.Count == offeredCards.Count;
 
     public bool InputLocked => inputLocked;
+
+    /// <summary>
+    /// TEMP DIAGNOSTIC: human-readable snapshot of everything CanConfirm
+    /// depends on, so a locked/clanking Offer button can log exactly which
+    /// condition is failing instead of failing silently.
+    /// </summary>
+    public string DebugOfferingState =>
+        $"inputLocked={inputLocked}, burnInProgress={burnInProgress}, " +
+        $"offeredCards={offeredCards.Count}, previewEntries={previewEntries.Count}, " +
+        $"minimumCardsToConfirm={Mathf.Max(1, minimumCardsToConfirm)}, " +
+        $"MaximumCardsToOffer={MaximumCardsToOffer}, " +
+        $"deckDrawPointAssigned={deckDrawPoint != null}, " +
+        $"gameplay={(GameManager.Instance != null ? GameManager.Instance.OfferingBlockReason : "GameManager missing")}";
+
+    [ContextMenu("Log Offer State")]
+    public void LogOfferState()
+    {
+        Debug.Log($"[Offering] {DebugOfferingState}");
+    }
 
     private void Awake()
     {
@@ -301,6 +344,11 @@ public class CardOfferingController : MonoBehaviour
 
     private void Update()
     {
+        // A rejected click must not leave the physical button permanently
+        // locked. Its availability follows actual altar/gameplay readiness.
+        if (confirmButton != null)
+            confirmButton.SetReadyToOffer(CanConfirm);
+
         if (inputLocked || burnInProgress)
             return;
 
@@ -313,18 +361,23 @@ public class CardOfferingController : MonoBehaviour
         if (escapeUndoesLast && keyboard.escapeKey.wasPressedThisFrame)
             UndoLastStage();
 
-        if (spaceConfirms && keyboard.spaceKey.wasPressedThisFrame && CanConfirm)
+        if (spaceConfirms && keyboard.spaceKey.wasPressedThisFrame)
         {
+            // Route through the physical button so Space gets the same
+            // mechanical animation, sounds, and clank-on-invalid behavior
+            // as clicking it. Falls back to a direct confirm if no button
+            // is assigned yet (e.g. testing before the button is in-scene).
             if (confirmButton != null)
-                confirmButton.PlayPressAnimation();
-
-            ConfirmOffering();
+                confirmButton.Press();
+            else if (CanConfirm)
+                ConfirmOffering();
         }
     }
 
     public bool TryStageCard(Card3DInteractable card)
     {
         if (inputLocked ||
+            (GameManager.Instance != null && !GameManager.Instance.CanPlayOffering) ||
             burnInProgress ||
             card == null ||
             card.IsOffered ||
@@ -404,9 +457,13 @@ public class CardOfferingController : MonoBehaviour
     public void ConfirmOffering()
     {
         if (!CanConfirm)
+        {
+            Debug.LogWarning($"[Offering] Cannot confirm: {DebugOfferingState}");
             return;
+        }
 
         inputLocked = true;
+        returningThisOffer.Clear();
         List<Card> confirmed = new List<Card>(MaximumCardsToOffer);
 
         foreach (Card3DInteractable physicalCard in offeredCards)
@@ -414,14 +471,113 @@ public class CardOfferingController : MonoBehaviour
             if (physicalCard == null)
                 continue;
 
+            if (CardReturnEffect.HasReturn(physicalCard.SourceCard))
+                returningThisOffer.Add(physicalCard);
             physicalCard.EnterSacrificingState();
 
             if (physicalCard.SourceCard != null)
                 confirmed.Add(physicalCard.SourceCard);
         }
 
+        if (altarFlameEffect != null)
+            altarFlameEffect.PlayBurst();
+
         OfferingConfirmed?.Invoke(confirmed);
         Debug.Log($"[Offering] Confirmed {confirmed.Count} cards in staged order.");
+
+        if (GameManager.Instance != null)
+        {
+            GameManager.Instance.PlayOfferedCards(confirmed, CompleteOfferingAfterScoring);
+        }
+        else
+        {
+            Debug.LogWarning("[Offering] No GameManager found — clearing altar without scoring.");
+            CompleteOfferingAfterScoring();
+        }
+    }
+
+    /// <summary>
+    /// Return cards retain their data and fly from the altar. Other physical
+    /// objects are reused as display slots, with fresh data drawn from the deck.
+    /// Their old card identities remain spent for this round.
+    /// </summary>
+    private void CompleteOfferingAfterScoring()
+    {
+        StartCoroutine(CompleteOfferingRoutine());
+    }
+
+    private IEnumerator CompleteOfferingRoutine()
+    {
+        var played = new List<Card3DInteractable>(offeredCards);
+        foreach (Card3DInteractable physical in played)
+            if (physical != null) RemovePreviewFor(physical);
+
+        // Resolve every Return first; it occupies a hand slot and needs no draw.
+        foreach (Card3DInteractable physical in played)
+        {
+            if (physical != null && returningThisOffer.Contains(physical))
+                ReturnCardToHand(physical);
+        }
+        if (returningThisOffer.Count > 0)
+            yield return new WaitForSeconds(refillSettleDuration);
+
+        foreach (Card3DInteractable physical in played)
+        {
+            if (physical == null || returningThisOffer.Contains(physical)) continue;
+            var manager = GameManager.Instance;
+            if (manager != null && manager.TryDrawOfferingReplacement(physical.SourceCard))
+            {
+                // Teleport the still-hidden root BEFORE restoring the visual.
+                // ReturnFromOffering restores its hand slot and normal movement.
+                PlaceNewDrawAtDeck(physical);
+                ReturnCardToHand(physical);
+                yield return new WaitForSeconds(replacementDrawStagger);
+            }
+            else
+            {
+                int index = originalHandIndices.TryGetValue(physical, out int saved) ? saved : 999;
+                emptySlots[physical] = index;
+                originalHandIndices.Remove(physical);
+                physical.gameObject.SetActive(false);
+            }
+        }
+        yield return new WaitForSeconds(refillSettleDuration);
+
+        offeredCards.Clear();
+        originalHandIndices.Clear();
+        previewEntries.Clear();
+        returningThisOffer.Clear();
+        ClearPreviewPointerState();
+        currentHoveredPreview = null;
+        inputLocked = false;
+        GameManager.Instance?.RefreshOfferingHUD();
+        if (confirmButton != null) confirmButton.SetReadyForNextTurn();
+    }
+
+    public void PlaceNewDrawAtDeck(Card3DInteractable physical)
+    {
+        if (physical == null || deckDrawPoint == null) return;
+        physical.transform.DOKill(false);
+        physical.transform.SetPositionAndRotation(deckDrawPoint.position, deckDrawPoint.rotation);
+    }
+
+    public void SetResolutionInputLocked(bool locked)
+    {
+        inputLocked = locked;
+    }
+
+    public void RestoreEmptySlotsForRound()
+    {
+        foreach (var entry in emptySlots)
+        {
+            if (entry.Key == null) continue;
+            originalHandIndices[entry.Key] = entry.Value;
+            PlaceNewDrawAtDeck(entry.Key);
+            ReturnCardToHand(entry.Key);
+            entry.Key.gameObject.SetActive(true);
+            entry.Key.HorizontalHandHolder?.SetCardVisible(entry.Key.SourceCard, false);
+        }
+        emptySlots.Clear();
     }
 
     public void UnlockOfferingForTesting()

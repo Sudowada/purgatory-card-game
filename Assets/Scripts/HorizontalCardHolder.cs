@@ -2,6 +2,7 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
+using DG.Tweening;
 
 /// <summary>
 /// Native 3D hand holder — replaces the old UI/Canvas-based version.
@@ -31,6 +32,13 @@ public class HorizontalCardHolder : MonoBehaviour
     [Header("Spawn Settings")]
     [SerializeField] private GameObject card3DPrefab;
     [SerializeField] private int cardsToSpawn = 7;
+
+    [Tooltip("Keep spawned cards hidden until GameManager deals a seated round.")]
+    [SerializeField] private bool startHiddenUntilSeated = true;
+
+    [Header("Round End Collection")]
+    [SerializeField, Min(0.05f)] private float collectToDeckDuration = 0.28f;
+    [SerializeField, Min(0f)] private float collectToDeckStagger = 0.025f;
 
     [Tooltip("Optional — if assigned, cards spawn here first and animate into their hand slot (a 'dealt from the deck' feel). Leave null to just appear directly in place.")]
     [SerializeField] private Transform dealFromPoint;
@@ -85,6 +93,9 @@ public class HorizontalCardHolder : MonoBehaviour
         public Card3DInteractable interactable;
         public Card3DView view;
         public Card card;
+        public bool visible = true;
+        public readonly Dictionary<Renderer, bool> rendererVisibility = new Dictionary<Renderer, bool>();
+        public readonly Dictionary<Collider, bool> colliderVisibility = new Dictionary<Collider, bool>();
         /// <summary>Static, never-animated collider used for all hover/click hit-testing — see the field comment on Card3DInteractable._hoverAnchor for why.</summary>
         public Transform hoverAnchor;
     }
@@ -105,6 +116,8 @@ public class HorizontalCardHolder : MonoBehaviour
 
     void Update()
     {
+        if (GameManager.Instance != null && !GameManager.Instance.CanPlayOffering)
+            return;
         HandleDragReorder();
         HandleDeselectAll();
         HandleHoverWave();
@@ -185,9 +198,87 @@ public class HorizontalCardHolder : MonoBehaviour
 
             interactable?.SetHoverAnchor(anchorCollider);
 
-            _slots.Add(new CardSlot { go = instance, interactable = interactable, view = view, card = card, hoverAnchor = anchorGO.transform });
+            var slot = new CardSlot
+            {
+                go = instance, interactable = interactable, view = view,
+                card = card, hoverAnchor = anchorGO.transform
+            };
+            foreach (var renderer in instance.GetComponentsInChildren<Renderer>(true))
+                slot.rendererVisibility[renderer] = renderer.enabled;
+            foreach (var collider in instance.GetComponentsInChildren<Collider>(true))
+                slot.colliderVisibility[collider] = collider.enabled;
+            _slots.Add(slot);
             cards.Add(card);
+            if (startHiddenUntilSeated) SetSlotVisible(slot, false);
         }
+    }
+
+    public void SetHandVisible(bool visible)
+    {
+        foreach (var slot in _slots) SetSlotVisible(slot, visible);
+    }
+
+    public bool SetCardVisible(Card card, bool visible)
+    {
+        var slot = _slots.Find(item => item.card == card);
+        if (slot == null) return false;
+        SetSlotVisible(slot, visible);
+        return true;
+    }
+
+    private void SetSlotVisible(CardSlot slot, bool visible)
+    {
+        // Keep the Card, Card3DView and interactable scripts alive so their
+        // Start methods, data updates and event initialization can finish.
+        slot.visible = visible;
+        foreach (var entry in slot.rendererVisibility)
+            if (entry.Key != null) entry.Key.enabled = visible && entry.Value;
+        foreach (var entry in slot.colliderVisibility)
+            if (entry.Key != null) entry.Key.enabled = visible && entry.Value;
+        if (slot.hoverAnchor != null) slot.hoverAnchor.gameObject.SetActive(visible);
+        if (!visible && slot.interactable != null)
+        {
+            slot.interactable.SetPrimaryHover(false);
+            slot.interactable.SetWaveEffect(Vector3.zero, 0f);
+        }
+    }
+
+    private void LateUpdate()
+    {
+        // Visual scripts may update renderers during Start/Update. Hidden
+        // hand slots remain hidden without disabling their data components.
+        foreach (var slot in _slots)
+        {
+            if (slot.visible) continue;
+            foreach (var entry in slot.rendererVisibility)
+                if (entry.Key != null) entry.Key.enabled = false;
+        }
+    }
+
+    public IEnumerator CollectHandToDeck(Transform deckPoint)
+    {
+        if (deckPoint == null)
+        {
+            SetHandVisible(false);
+            yield break;
+        }
+        Sequence collection = DOTween.Sequence();
+        int animated = 0;
+        foreach (var slot in _slots)
+        {
+            if (slot.hoverAnchor != null) slot.hoverAnchor.gameObject.SetActive(false);
+            if (slot.go == null || !slot.go.activeSelf) continue;
+            slot.interactable?.EnterSacrificingState();
+            slot.go.transform.DOKill(false);
+            float delay = animated++ * collectToDeckStagger;
+            collection.Insert(delay, slot.go.transform.DOMove(deckPoint.position, collectToDeckDuration)
+                .SetEase(Ease.InOutCubic));
+            collection.Insert(delay, slot.go.transform.DORotateQuaternion(deckPoint.rotation, collectToDeckDuration)
+                .SetEase(Ease.InOutCubic));
+        }
+        if (animated > 0) yield return collection.WaitForCompletion();
+        else collection.Kill();
+        SetHandVisible(false);
     }
 
     // ── Drag-to-reorder ───────────────────────────────────────────────────────
@@ -363,7 +454,7 @@ public class HorizontalCardHolder : MonoBehaviour
             slot.hoverAnchor.gameObject.SetActive(true);
 
         interactable.ReturnToHandState();
-
+        SetSlotVisible(slot, true);
         RefanAll();
     }
 
