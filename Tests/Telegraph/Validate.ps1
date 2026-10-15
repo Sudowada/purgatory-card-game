@@ -7,13 +7,13 @@ $dotnet = Join-Path $UnityData 'NetCoreRuntime/dotnet.exe'
 $csc = Join-Path $UnityData 'DotNetSdkRoslyn/csc.dll'
 $refs = Get-ChildItem (Join-Path $UnityData 'NetStandard/ref/2.1.0/*.dll') | ForEach-Object { '-r:"' + $_.FullName + '"' }
 $sources = @('Assets/Scripts/Card.cs','Assets/Scripts/RandomEnemyTelegraph.cs') | ForEach-Object { '"' + (Join-Path $repo $_) + '"' }
-$compile = @('-nologo','-target:library','-langversion:9','-nostdlib+',('-out:"'+(Join-Path $build 'Telegraph.dll')+'"')) + $refs
+$compile = @('-nologo','-target:library','-define:PURGATORY_INTERFACE_CHECKS','-langversion:9','-nostdlib+',('-out:"'+(Join-Path $build 'Telegraph.dll')+'"')) + $refs
 $compile += Get-ChildItem (Join-Path $UnityData 'Managed/UnityEngine/*.dll') | ForEach-Object { '-r:"' + $_.FullName + '"' }
 $compile += $sources + @(('"'+(Join-Path $repo 'Assets/Scripts/CardAttackVisuals.cs')+'"'),('"'+(Join-Path $PSScriptRoot 'Interfaces.cs')+'"'))
 $rsp = Join-Path $build 'compile.rsp'; $compile | Set-Content $rsp
 & $dotnet $csc ('@'+$rsp)
 if ($LASTEXITCODE -ne 0) { throw 'Unity-reference compilation failed' }
-$checks = @('-nologo','-target:exe','-langversion:9','-nostdlib+',('-out:"'+(Join-Path $build 'BehaviorChecks.dll')+'"')) + $refs + $sources + ('"'+(Join-Path $PSScriptRoot 'BehaviorChecks.cs')+'"')
+$checks = @('-nologo','-target:exe','-define:PURGATORY_BEHAVIOR_CHECKS','-langversion:9','-nostdlib+',('-out:"'+(Join-Path $build 'BehaviorChecks.dll')+'"')) + $refs + $sources + ('"'+(Join-Path $PSScriptRoot 'BehaviorChecks.cs')+'"')
 $rsp = Join-Path $build 'checks.rsp'; $checks | Set-Content $rsp
 & $dotnet $csc ('@'+$rsp)
 if ($LASTEXITCODE -ne 0) { throw 'Behavior-check compilation failed' }

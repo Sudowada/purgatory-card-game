@@ -1,3 +1,4 @@
+#if PURGATORY_BEHAVIOR_CHECKS
 using System;
 using System.Collections.Generic;
 namespace UnityEngine {
@@ -38,3 +39,4 @@ public static class Checks {
 Console.WriteLine(passed+" behavior checks passed");
  }
 }
+#endif
