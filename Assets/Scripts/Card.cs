@@ -16,7 +16,9 @@ public class Card : MonoBehaviour
     public string cardSuit;     // "♠" "♥" "♦" "♣"
 
     /// <summary>Score value — reversed scale. Ace=14pts, King=2pts (formula: 15 - cardValue).</summary>
-    public int PointValue => 15 - cardValue;
+    public int PointValue => Mathf.Max(0, 15 - cardValue - pointDamageTaken);
+    [HideInInspector] public int pointDamageTaken;
+    public void ApplyPointDamage(int amount) => pointDamageTaken += Mathf.Max(0, amount);
 
     [Header("Face & Rot")]
     [Tooltip("Used ONLY for diff scoring vs enemy. Starts = cardValue. Upgradeable by collectibles.")]
@@ -54,6 +56,7 @@ public class Card : MonoBehaviour
     /// </summary>
     public void InitCardStats()
     {
+        pointDamageTaken = 0;
         faceValue    = cardValue;   // base face value equals identity
         rotThreshold = cardValue;   // base rot threshold equals identity
 

@@ -149,6 +149,18 @@ public class GameManager : MonoBehaviour
         !_inputBlocked && handsLeft > 0;
     public bool ShouldRefillOffering => !runFinished && !_thresholdReached && handsLeft > 0;
     public int CardsRemainingInDrawPile => Mathf.Max(0, currentDeck.Count - deckIndex);
+    /// <summary>Immediate discard replacement. Decay of any amount prevents discard.
+    /// Existing announced targets keep tracking the slot, so discarding cannot erase an attack.</summary>
+    public bool TryDiscardCard(Card card)
+    {
+        if (!CanPlayOffering || card == null || card.decayLevel > 0 || card.isDecayed ||
+            !handHolder.cards.Contains(card) || CardsRemainingInDrawPile <= 0) return false;
+        discardPile.Add((card.cardValue, card.cardSuit));
+        card.Deselect();
+        TryAssignNextCard(card);
+        RefreshOfferingHUD();
+        return true;
+    }
     // Attach/update the effect on a currently drawn card. The current deck uses
     // value/suit identities; duplicate cards with different effects will need
     // persistent card IDs when the shop/deck data model is expanded.
