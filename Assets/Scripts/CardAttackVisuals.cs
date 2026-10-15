@@ -32,6 +32,26 @@ public sealed class CardAttackVisuals : MonoBehaviour
     private bool presentationVisible = true;
     private Card3DInteractable card;
     private static Sprite attackSprite, shieldSprite;
+    private string intentText;
+    public void SetIntent(string text)
+    {
+        intentText = text;
+        if (attackInstance == null) return;
+        var label = attackInstance.GetComponentInChildren<TextMesh>();
+        if (label == null)
+        {
+            var owner = new GameObject("Attack Intent");
+            owner.transform.SetParent(attackInstance.transform, false);
+            owner.transform.localPosition = new Vector3(0f, 0.035f, 0f);
+            label = owner.AddComponent<TextMesh>();
+            label.anchor = TextAnchor.MiddleCenter;
+            label.alignment = TextAlignment.Center;
+            label.fontSize = 32;
+            label.characterSize = 0.003f;
+            label.color = Color.white;
+        }
+        label.text = text;
+    }
 
     private void Awake() => card = GetComponent<Card3DInteractable>();
     private Transform Root => cardVisualRoot != null ? cardVisualRoot :
@@ -77,6 +97,7 @@ public sealed class CardAttackVisuals : MonoBehaviour
             attackInstance = CreateEffect(attackIndicatorPrefab, false);
             attackScale = attackInstance.transform.localScale;
             Follow(attackInstance, attackAnchor, attackOffset, attackScale);
+            if (!string.IsNullOrEmpty(intentText)) SetIntent(intentText);
         }
     }
 

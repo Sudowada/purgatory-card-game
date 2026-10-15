@@ -11,6 +11,9 @@ public class GameManager : MonoBehaviour
     [Header("Hand")]
     [SerializeField] private HorizontalCardHolder handHolder;
     [SerializeField, Min(0f)] private float initialDrawStagger = 0.07f;
+    [Header("Enemy Attack Tempo")]
+    [SerializeField, Min(0f)] private float offeredAttackLeadIn = 0.3f;
+    [SerializeField, Min(0f)] private float attackRecovery = 0.1f;
     [Header("Enemy Scaling")]
     [SerializeField] private int enemyBaseMin       = 1;
     [SerializeField] private int enemyBaseMax       = 4;
@@ -242,6 +245,11 @@ public class GameManager : MonoBehaviour
         enemyTelegraph = telegraphOwner.GetComponent<RandomEnemyTelegraph>();
         if (enemyTelegraph == null) enemyTelegraph = telegraphOwner.AddComponent<RandomEnemyTelegraph>();
         enemyTelegraph.Initialize(handHolder);
+        enemyTelegraph.CardRotted += card =>
+        {
+            int bonus = RelicSystem.Instance != null ? RelicSystem.Instance.OnCardFullyRotted(card) : 0;
+            if (bonus != 0) AddBonusScore(bonus);
+        };
         RegisterCardEvents();
         handInitialized = true;
         Debug.Log($"[HandFlow] Initialized {handHolder.cards.Count} cards; state={GameStateManager.Instance?.CurrentState}.");
@@ -855,7 +863,7 @@ public class GameManager : MonoBehaviour
             && ConsumableSystem.Instance.decayFrozenThisRound;
         enemyTelegraph?.ResolveAttack(toPlay, frozen);
         if (frozen) ConsumableSystem.Instance.ConsumeDecayFreeze();
-        yield return new WaitForSeconds(0.1f);
+        yield return new WaitForSeconds(attackRecovery);
         var freeSlots = toPlay.ToList();
         freeSlots.Sort((a, b) =>
             b.transform.GetSiblingIndex().CompareTo(a.transform.GetSiblingIndex()));
@@ -944,12 +952,12 @@ public class GameManager : MonoBehaviour
             card.Deselect();
         // No cardAnimator.PlayCards() here — the altar's own burn/flame
         // visual is the "play" animation for this path.
-        yield return new WaitForSeconds(0.3f);
+        yield return new WaitForSeconds(offeredAttackLeadIn);
         bool frozen = ConsumableSystem.Instance != null
             && ConsumableSystem.Instance.decayFrozenThisRound;
         enemyTelegraph?.ResolveAttack(toPlay, frozen);
         if (frozen) ConsumableSystem.Instance.ConsumeDecayFreeze();
-        yield return new WaitForSeconds(0.1f);
+        yield return new WaitForSeconds(attackRecovery);
         // Finish scoring before refilling or opening the next-round screen.
         yield return scoreAnimation;
         onComplete?.Invoke();
