@@ -35,8 +35,8 @@ public class CardPipLayout : MonoBehaviour
     [SerializeField] private GameObject faceArtRoot;
 
     [Header("Grid Tuning")]
-    [SerializeField] private float xScale = 0.032f;   // half-spread of the left/right pip columns
-    [SerializeField] private float ySpacing = 0.07f;  // half-spread of the top/bottom pip rows
+    [SerializeField] private float xScale = 0.025f;   // half-spread of the left/right pip columns
+    [SerializeField] private float ySpacing = 0.0525f;  // half-spread of the top/bottom pip rows
     [SerializeField] private float pipLiftY = 0.002f;
     [Tooltip("Multiplies the Pip Template's own scale, instead of using a fixed size — keeps pips consistent with whatever scale you already tuned SuitTopLeft to.")]
     [SerializeField] private float normalPipScaleMultiplier = 1f;

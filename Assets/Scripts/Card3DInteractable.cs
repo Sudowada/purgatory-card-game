@@ -1654,6 +1654,7 @@ public class Card3DInteractable : MonoBehaviour
         PhysicalState = CardPhysicalState.Offered;
 
         isBurningVisual = true;
+        GetComponent<CardAttackVisuals>()?.SetBurning(true);
 
         targetWaveWorldOffset = Vector3.zero;
 
@@ -1686,6 +1687,7 @@ public class Card3DInteractable : MonoBehaviour
         {
 
             isBurningVisual = false;
+            GetComponent<CardAttackVisuals>()?.SetBurning(false);
 
             onComplete?.Invoke();
 
@@ -1808,6 +1810,7 @@ public class Card3DInteractable : MonoBehaviour
             ResetOfferingBurnVisual();
 
             isBurningVisual = false;
+            GetComponent<CardAttackVisuals>()?.SetBurning(false);
 
             if (visualRoot != null)
 
@@ -1926,6 +1929,7 @@ public class Card3DInteractable : MonoBehaviour
         PhysicalState = CardPhysicalState.InHand;
 
         isBurningVisual = false;
+        GetComponent<CardAttackVisuals>()?.SetBurning(false);
 
         if (visualRoot != null)
 

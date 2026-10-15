@@ -68,8 +68,14 @@ public class Card : MonoBehaviour
     /// </summary>
     public bool ApplyDecay()
     {
-        if (isDecayed) return false;
-        decayLevel++;
+        return ApplyDecay(1);
+    }
+
+    /// <summary>Add cumulative decay without changing card identity or scoring data.</summary>
+    public bool ApplyDecay(int amount)
+    {
+        if (isDecayed || amount <= 0) return false;
+        decayLevel = Mathf.Min(Mathf.Max(1, rotThreshold), decayLevel + amount);
         if (decayLevel >= rotThreshold)
             isDecayed = true;
         return isDecayed;

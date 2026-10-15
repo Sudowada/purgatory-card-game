@@ -13,6 +13,7 @@ GameObject:
   - component: {fileID: 2094801118640952167}
   - component: {fileID: 4565002275960036882}
   - component: {fileID: 2149775156299717330}
+  - component: {fileID: 780601234567890001}
   m_Layer: 0
   m_Name: Card3Droot
   m_TagString: Untagged
@@ -153,8 +154,8 @@ MonoBehaviour:
   sourceCard: {fileID: 2173076867130338873}
   pipTemplate: {fileID: 4543237949603838640}
   faceArtRoot: {fileID: 0}
-  xScale: 0.032
-  ySpacing: 0.07
+  xScale: 0.025
+  ySpacing: 0.0525
   pipLiftY: -0.0005
   normalPipScaleMultiplier: 1
   acePipScaleMultiplier: 2.2
@@ -1573,3 +1574,29 @@ MeshRenderer:
   m_CorrespondingSourceObject: {fileID: 5033405585667272595, guid: 995e18948cee594438d49e2b31668c46, type: 3}
   m_PrefabInstance: {fileID: 2310392779896314495}
   m_PrefabAsset: {fileID: 0}
+--- !u!114 &780601234567890001
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 174684175197529509}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 80c0cd5d051b4385b1cecc5338a72e24, type: 3}
+  m_Name:
+  m_EditorClassIdentifier: Assembly-CSharp::CardAttackVisuals
+  cardVisualRoot: {fileID: 2853752208219291028}
+  attackAnchor: {fileID: 0}
+  shieldAnchor: {fileID: 0}
+  attackIndicatorPrefab: {fileID: 0}
+  shieldImpactPrefab: {fileID: 0}
+  attackOffset: {x: 0, y: 0.015, z: 0.07}
+  shieldOffset: {x: 0, y: 0.003, z: 0}
+  bobHeight: 0.003
+  bobSpeed: 2.5
+  shieldDuration: 0.35
+  shieldRiseDuration: 0.07
+  shieldExitDuration: 0.12
+  undoExitDuration: 0.08
+  shieldPopScale: 1.12
