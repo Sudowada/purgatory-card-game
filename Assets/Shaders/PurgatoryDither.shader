@@ -10,6 +10,8 @@ Shader "Purgatory/Fullscreen Dither"
         _PixelStyle ("Pixel Dither Blend (0 = Round Dots)", Range(0, 1)) = 1
         _PixelSize ("Dither Pixel Size", Range(1, 6)) = 1
         _Grime ("Grime Variation", Range(0, 1)) = 0.2
+        _CornerGrime ("Corner Concentration", Range(0, 1)) = 0.9
+        _CornerReach ("Corner Reach", Range(0.1, 1)) = 0.65
         _Coverage ("Pattern Coverage", Range(0,1)) = 0.65
         _TransitionFocus ("Shadow Transition Focus", Range(0.5,4)) = 1.5
         _PatternSpacing ("Dot Spacing (Screen Pixels)", Range(2, 16)) = 4
@@ -58,6 +60,7 @@ Shader "Purgatory/Fullscreen Dither"
                 float _Strength, _PatternSpacing, _Levels, _Contrast;
                 float _NearClear, _NearFull;
                 float _PixelStyle, _PixelSize, _Grime;
+                float _CornerGrime, _CornerReach;
                 float _Coverage, _TransitionFocus;
                 float _ShadowStart, _ShadowEnd;
                 float _Exposure, _BlackPoint, _Saturation;
@@ -177,7 +180,14 @@ Shader "Purgatory/Fullscreen Dither"
                     1.0-_Coverage+0.18,patch);
                 patchMask *= smoothstep(0.0,0.08,_Coverage);
                 patchMask = lerp(patchMask,1.0,smoothstep(0.92,1.0,_Coverage));
-                float patternMask = shadowMask * nearMask * patchMask;
+                // Fixed screen-space islands: no time/camera-driven noise drift.
+                // Both axes must approach an edge, concentrating grime at corners.
+                float2 edge = abs(screenUV * 2.0 - 1.0);
+                float corner = edge.x * edge.y;
+                float irregularCorner = smoothstep(1.0 - _CornerReach,
+                    1.0, corner + (patch - 0.5) * 0.4);
+                float cornerMask = lerp(1.0, irregularCorner, _CornerGrime);
+                float patternMask = shadowMask * nearMask * patchMask * cornerMask;
 
                 float steps = max(round(_Levels) - 1.0, 1.0);
                 float quantized = floor(brightness * steps + 0.5) / steps;
