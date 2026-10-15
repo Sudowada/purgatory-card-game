@@ -698,6 +698,14 @@ public class Card3DInteractable : MonoBehaviour
             return;
         }
 
+        // D discards only the hovered healthy card; replacement is synchronous.
+        if (PhysicalState == CardPhysicalState.InHand && isPrimaryHover && !pointerDown &&
+            Keyboard.current != null && Keyboard.current.dKey.wasPressedThisFrame)
+        {
+            GameManager.Instance?.TryDiscardCard(SourceCard);
+            return;
+        }
+
         if (PhysicalState == CardPhysicalState.InHand &&
 
             isPrimaryHover &&
