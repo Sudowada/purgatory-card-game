@@ -1686,14 +1686,18 @@ public class CardOfferingController : MonoBehaviour
 
         if (cameraToUse != null)
         {
-            // Preview copies are flat card visuals whose local +Z is their face.
-            // Face each copy toward the active camera and keep the card upright.
-            worldRotation = Quaternion.LookRotation(
+            // Card3Droot's CardVisual child is rotated +90 degrees around X,
+            // so the card face normal is local -Y on this root. Compensate for
+            // that child rotation so the visible face points toward the player.
+            Quaternion cameraFacing = Quaternion.LookRotation(
                 -cameraToUse.transform.forward,
                 cameraToUse.transform.up);
-
-            if (Mathf.Abs(previewRotationOffsetEuler.z) > 0.001f)
-                worldRotation *= Quaternion.Euler(0f, 0f, previewRotationOffsetEuler.z);
+            Quaternion previewRoll = Quaternion.Euler(
+                0f, 0f, previewRotationOffsetEuler.z);
+            worldRotation =
+                cameraFacing *
+                previewRoll *
+                Quaternion.Euler(-90f, 0f, 0f);
         }
         else
         {
