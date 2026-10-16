@@ -769,6 +769,11 @@ public class GameManager : MonoBehaviour
         card.isDecayed = false;
         CardReturnEffect.SetOnCard(card, returnCardIdentities.Contains(next));
         card.InitCardStats();
+
+        // Refresh 3D card presentation immediately after assigning the first dealt
+        // card (and every replacement), before the animation makes it visible.
+        card.GetComponentInParent<Card3DView>(true)?.RefreshVisuals();
+        card.GetComponentInParent<CardPipLayout>(true)?.RefreshPips();
         return true;
     }
     private IEnumerator DrawInitial3DHand(List<Card> drawn, CardOfferingController offering)

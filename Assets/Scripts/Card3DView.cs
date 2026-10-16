@@ -39,7 +39,16 @@ public class Card3DView : MonoBehaviour
 
     [Header("Decay Colors")]
     [SerializeField] private Color normalDecayColor = new Color(0.11f, 0.09f, 0.07f);
-    [SerializeField] private Color fullyDecayedColor = new Color(0.35f, 0.05f, 0.05f);
+    [SerializeField] private Color fullyDecayedColor = new Color(0.85f, 0.12f, 0.04f);
+    [SerializeField] private Color decayGlowColor = new Color(1f, 0.48f, 0.08f, 1f);
+    [SerializeField, Range(0f, 1f)] private float decayGlowOuter = 0.28f;
+    [SerializeField, Range(0f, 1f)] private float decayGlowPower = 0.75f;
+
+    private static readonly int GlowColorId = Shader.PropertyToID("_GlowColor");
+    private static readonly int GlowOffsetId = Shader.PropertyToID("_GlowOffset");
+    private static readonly int GlowInnerId = Shader.PropertyToID("_GlowInner");
+    private static readonly int GlowOuterId = Shader.PropertyToID("_GlowOuter");
+    private static readonly int GlowPowerId = Shader.PropertyToID("_GlowPower");
 
     [Header("3D Text Sync")]
     [Tooltip("Keeps every FaceValue / PointValue / Suit / Decay TMP child synchronized with the real Card data. This runs after gameplay scripts have had a chance to assign the card for the frame.")]
@@ -111,10 +120,7 @@ public class Card3DView : MonoBehaviour
             ForceSuitVisible(suitBottomRightText, suit, suitColor);
 
         if (decayText != null)
-        {
-            decayText.text = decayLevel > 0 ? decayLevel.ToString() : "";
-            decayText.color = sourceCard.isDecayed ? fullyDecayedColor : normalDecayColor;
-        }
+            ApplyDecayVisual(decayText, decayLevel, sourceCard.isDecayed);
 
         // Your actual prefab has separate top-left AND bottom-right text
         // objects. Update all of them by name, but deliberately do not touch
@@ -142,10 +148,7 @@ public class Card3DView : MonoBehaviour
                 }
                 else if (lowerName.Contains("decay"))
                 {
-                    textMesh.text = decayLevel > 0 ? decayLevel.ToString() : "";
-                    textMesh.color = sourceCard.isDecayed
-                        ? fullyDecayedColor
-                        : normalDecayColor;
+                    ApplyDecayVisual(textMesh, decayLevel, sourceCard.isDecayed);
                 }
             }
         }
@@ -154,6 +157,44 @@ public class Card3DView : MonoBehaviour
         lastPointValue = pointValue;
         lastDecayLevel = decayLevel;
         lastSuit = suit;
+    }
+
+    private void ApplyDecayVisual(TMP_Text textMesh, int decayLevel, bool fullyDecayed)
+    {
+        if (textMesh == null)
+            return;
+
+        textMesh.text = decayLevel > 0 ? $"-{decayLevel}" : "";
+        textMesh.color = decayLevel <= 0
+            ? normalDecayColor
+            : (fullyDecayed ? fullyDecayedColor : decayGlowColor);
+
+        Material material = textMesh.fontMaterial;
+        if (material == null)
+            return;
+
+        bool hasGlowProperties =
+            material.HasProperty(GlowColorId) &&
+            material.HasProperty(GlowOuterId) &&
+            material.HasProperty(GlowPowerId);
+
+        if (decayLevel > 0 && hasGlowProperties)
+        {
+            material.EnableKeyword("GLOW_ON");
+            material.SetColor(GlowColorId, fullyDecayed ? fullyDecayedColor : decayGlowColor);
+            if (material.HasProperty(GlowOffsetId))
+                material.SetFloat(GlowOffsetId, 0f);
+            if (material.HasProperty(GlowInnerId))
+                material.SetFloat(GlowInnerId, 0.02f);
+            material.SetFloat(GlowOuterId, decayGlowOuter);
+            material.SetFloat(GlowPowerId, decayGlowPower);
+        }
+        else if (material.IsKeywordEnabled("GLOW_ON"))
+        {
+            material.DisableKeyword("GLOW_ON");
+        }
+
+        textMesh.fontMaterial = material;
     }
 
     private void ForceSuitVisible(
@@ -236,7 +277,10 @@ public class Card3DView : MonoBehaviour
             suitBottomRightText.text = "";
 
         if (decayText != null)
+        {
             decayText.text = "";
+            ApplyDecayVisual(decayText, 0, false);
+        }
     }
 
     private bool IsRedSuit(string suit)

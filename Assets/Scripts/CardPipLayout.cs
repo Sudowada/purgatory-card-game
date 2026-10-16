@@ -24,6 +24,9 @@ public class CardPipLayout : MonoBehaviour
     [Tooltip("Renderer on the transparent art plane/Quad. Assign a material that supports alpha.")]
     [SerializeField] private Renderer faceArtRenderer;
 
+    [Tooltip("Slightly mutes face art so it sits naturally in the card lighting.")]
+    [SerializeField] private Color faceArtTint = new Color(0.76f, 0.76f, 0.76f, 1f);
+
     [Header("Generic Face Art")]
     [SerializeField] private Texture2D genericJackArt;
     [SerializeField] private Texture2D genericQueenArt;
@@ -152,6 +155,14 @@ public class CardPipLayout : MonoBehaviour
         }
     }
 
+    private void OnEnable()
+    {
+        // The first deal assigns card data while card objects may be inactive.
+        // Rebuild as soon as the card becomes active so its first visible frame is correct.
+        if (pipContainer != null)
+            RefreshPips();
+    }
+
     private void Update()
     {
         if (sourceCard == null)
@@ -176,6 +187,8 @@ public class CardPipLayout : MonoBehaviour
         }
 
         int value = sourceCard.cardValue;
+        lastValue = value;
+        lastSuit = sourceCard.cardSuit;
         bool isFaceCard = value >= 11 && value <= 13;
 
         if (isFaceCard)
@@ -293,6 +306,16 @@ public class CardPipLayout : MonoBehaviour
 
         faceArtRenderer.GetPropertyBlock(artPropertyBlock);
         artPropertyBlock.SetTexture(textureProperty, art);
+
+        Color mutedTint = faceArtTint;
+        mutedTint.a = 1f;
+        if (sharedMaterial.HasProperty("_BaseColor"))
+            artPropertyBlock.SetColor("_BaseColor", mutedTint);
+        if (sharedMaterial.HasProperty("_Color"))
+            artPropertyBlock.SetColor("_Color", mutedTint);
+        if (sharedMaterial.HasProperty("_EmissionColor"))
+            artPropertyBlock.SetColor("_EmissionColor", Color.black);
+
         faceArtRenderer.SetPropertyBlock(artPropertyBlock);
     }
 
