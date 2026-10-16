@@ -1,5 +1,6 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
+using UnityEngine.EventSystems;
 using System.Collections;
 
 public enum SwitchType { Lever, Binary }
@@ -25,6 +26,23 @@ public class PuzzleSwitch : MonoBehaviour
 
     [Header("Drag Settings")]
     public float dragSensitivity = 1.2f;
+    [Min(1f)] public float clickMovementThreshold = 6f;
+    [Min(1f)] public float dragThreshold = 12f;
+    [Min(0f)] public float dragArmTime = 0.15f;
+    [Min(1f)] public float lookCancelAngle = 45f;
+
+    private SwitchPanelInteract _panel;
+    private FirstPersonController _controller;
+    private bool _pointerHeld;
+    private float _pressTime;
+    private Vector2 _gestureDelta;
+    private float _gestureTravel;
+    private Quaternion _pressRotation;
+    private float _pressAngle;
+    private Vector3 _hitPoint;
+    private Vector3 _pressWorldPoint;
+    private float _snapTargetAngle;
+    private static PuzzleSwitch _activeSwitch;
 
     [Header("Lever Light")]
     public Light leverLight;
@@ -55,7 +73,7 @@ public class PuzzleSwitch : MonoBehaviour
     private int   _binaryState    = 1;
     private float _leverNormal    = 0f;
     private bool  _isSolved       = false;
-    private bool  _isInteractable = false;
+    private bool  _isInteractable = true;
     private bool  _isAnimating    = false;
     private bool  _isDragging     = false;
     private bool  _inMiddle       = false;
@@ -72,80 +90,157 @@ public class PuzzleSwitch : MonoBehaviour
         UpdateVisuals();
     }
 
-    void Update()
+    public void ConfigurePanel(SwitchPanelInteract panel)
     {
-        if (_isSolved || !_isInteractable) return;
-
-        Debug.Log($"[PuzzleSwitch] {gameObject.name} is interactable and listening");
-
-        var mouse = Mouse.current;
-        if (mouse == null) return;
-
-        // ── Drag handling ─────────────────────────────────────────────
-        if (_isDragging)
-        {
-            if (mouse.leftButton.isPressed)
-            {
-                float mouseDelta = mouse.delta.y.ReadValue() * dragSensitivity;
-                _currentAngle = Mathf.Clamp(
-                    _currentAngle - mouseDelta,
-                    Mathf.Min(leverUpAngle, leverDownAngle),
-                    Mathf.Max(leverUpAngle, leverDownAngle));
-                ApplyHandleAngle(_currentAngle);
-                UpdateVisualsFromAngle();
-            }
-            else
-            {
-                _isDragging = false;
-                SnapToNearestState();
-            }
-            return;
-        }
-
-        if (!mouse.leftButton.wasPressedThisFrame) return;
-
-        Debug.Log($"[PuzzleSwitch] {gameObject.name} detected left click");
-
-        // Raycast to check if clicking this switch
-        Ray ray = playerCamera.ScreenPointToRay(Mouse.current.position.ReadValue());
-        if (!Physics.Raycast(ray, out RaycastHit hit, interactDistance))
-        {
-            Debug.Log($"[PuzzleSwitch] {gameObject.name} raycast missed");
-            return;
-        }
-
-        Debug.Log($"[PuzzleSwitch] {gameObject.name} raycast hit: {hit.transform.name}");
-
-        if (hit.transform != transform && !hit.transform.IsChildOf(transform)) return;
-
-        StartCoroutine(ClickOrDrag());
+        _panel = panel;
+        if (panel.playerCamera != null) playerCamera = panel.playerCamera;
+        _controller = panel.playerController;
     }
 
-    IEnumerator ClickOrDrag()
+    bool CanInteract()
+    {
+        if (playerCamera == null) playerCamera = Camera.main;
+        if (_controller == null && playerCamera != null)
+            _controller = playerCamera.GetComponentInParent<FirstPersonController>();
+        return !_isSolved && _isInteractable && isActiveAndEnabled
+            && (_panel == null || _panel.isActiveAndEnabled)
+            && playerCamera != null && playerCamera.isActiveAndEnabled
+            && _controller != null && _controller.isActiveAndEnabled
+            && Cursor.lockState == CursorLockMode.Locked
+            && (GameStateManager.Instance == null
+                || GameStateManager.Instance.CurrentState == GameState.Exploration)
+            && (EventSystem.current == null || !EventSystem.current.IsPointerOverGameObject());
+    }
+
+    float InteractionDistance => _panel != null
+        ? Mathf.Min(interactDistance, _panel.interactDistance) : interactDistance;
+
+    bool HitThisSwitch()
+    {
+        Ray ray = playerCamera.ViewportPointToRay(new Vector3(0.5f, 0.5f, 0f));
+        if (!Physics.Raycast(ray, out RaycastHit hit, InteractionDistance)
+            || (hit.transform != transform && !hit.transform.IsChildOf(transform))) return false;
+        _hitPoint = hit.point;
+        return true;
+    }
+
+    // Runs after FirstPersonController.Update so raycasts use this frame's look.
+    void LateUpdate()
     {
         var mouse = Mouse.current;
-        float heldTime   = 0f;
-        float mouseMoved = 0f;
-        const float dragThreshold = 5f;
-        const float holdThreshold = 0.15f;
-
-        while (mouse.leftButton.isPressed)
+        if (mouse == null || !CanInteract() || mouse.rightButton.isPressed
+            || (Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame))
         {
-            heldTime   += Time.deltaTime;
-            mouseMoved += Mathf.Abs(mouse.delta.y.ReadValue());
-            if (heldTime > holdThreshold || mouseMoved > dragThreshold)
-            {
-                _isDragging = true;
-                yield break;
-            }
-            yield return null;
+            CancelInteraction();
+            return;
         }
+
+        if (!_pointerHeld)
+        {
+            if (_activeSwitch != null || _isAnimating
+                || !mouse.leftButton.wasPressedThisFrame || !HitThisSwitch()) return;
+            _activeSwitch = this;
+            _pointerHeld = true;
+            _pressTime = Time.unscaledTime;
+            _pressRotation = playerCamera.transform.rotation;
+            _pressAngle = _currentAngle;
+            _pressWorldPoint = _hitPoint;
+            _gestureDelta = Vector2.zero;
+            _gestureTravel = 0f;
+            // The down-frame delta happened before capture; do not count it.
+            return;
+        }
+
+        Vector2 delta = mouse.delta.ReadValue();
+        _gestureDelta += delta;
+        _gestureTravel += delta.magnitude;
+
+        // A turn-away is always look input, even after a drag has armed.
+        if (Vector3.Distance(playerCamera.transform.position, _pressWorldPoint) > InteractionDistance
+            || Quaternion.Angle(_pressRotation, playerCamera.transform.rotation) > lookCancelAngle
+            || Mathf.Abs(_gestureDelta.x) > Mathf.Max(dragThreshold, clickMovementThreshold))
+        {
+            CancelInteraction();
+            return;
+        }
+
+        if (!_isDragging && _gestureTravel > clickMovementThreshold)
+        {
+            // Require a brief intentional hold, then predominantly vertical movement.
+            // A quick camera swipe cancels rather than becoming a click on release.
+            if (Time.unscaledTime - _pressTime < dragArmTime
+                || Mathf.Abs(_gestureDelta.x) > Mathf.Abs(_gestureDelta.y))
+            {
+                CancelInteraction();
+                return;
+            }
+            if (Mathf.Abs(_gestureDelta.y) >= Mathf.Max(dragThreshold, clickMovementThreshold))
+                _isDragging = true;
+        }
+
+        if (_isDragging)
+        {
+            _currentAngle = Mathf.Clamp(_pressAngle - _gestureDelta.y * dragSensitivity,
+                Mathf.Min(leverUpAngle, leverDownAngle),
+                Mathf.Max(leverUpAngle, leverDownAngle));
+            ApplyHandleAngle(_currentAngle);
+            UpdateVisualsFromAngle();
+        }
+
+        if (mouse.leftButton.wasReleasedThisFrame || !mouse.leftButton.isPressed)
+        {
+            bool dragged = _isDragging;
+            bool clicked = !dragged && _gestureTravel <= clickMovementThreshold && HitThisSwitch();
+            _pointerHeld = _isDragging = false;
+            _activeSwitch = null;
+            if (dragged) SnapToNearestState();
+            else if (clicked) OnClicked();
+        }
+    }
+
+    public bool TryClickFromPanel()
+    {
+        if (!CanInteract() || _isAnimating || _activeSwitch != null
+            || (Mouse.current != null && (Mouse.current.leftButton.isPressed
+                || Mouse.current.rightButton.isPressed)) || !HitThisSwitch()) return false;
         OnClicked();
+        return true;
+    }
+
+    public void CancelInteraction()
+    {
+        if (_isDragging)
+        {
+            // Restore the preview only; cancellation must never notify puzzle logic.
+            _currentAngle = _pressAngle;
+            ApplyHandleAngle(_currentAngle);
+            UpdateVisuals();
+        }
+        _pointerHeld = _isDragging = false;
+        if (_activeSwitch == this) _activeSwitch = null;
+    }
+
+    void OnDisable()
+    {
+        CancelInteraction();
+        // Deactivating a GameObject stops coroutines. Finish an accepted snap
+        // so re-enabling the switch cannot leave input blocked indefinitely.
+        if (_snapCoroutine != null) StopCoroutine(_snapCoroutine);
+        _snapCoroutine = null;
+        if (_isAnimating)
+        {
+            _currentAngle = _snapTargetAngle;
+            ApplyHandleAngle(_currentAngle);
+            _isAnimating = false;
+        }
+    }
+    void OnApplicationFocus(bool focused)
+    {
+        if (!focused) CancelInteraction();
     }
 
     void OnClicked()
     {
-        Debug.Log($"[PuzzleSwitch] OnClicked on {gameObject.name}");
         PlaySound(clickClip);
         if (switchType == SwitchType.Lever)
             HandleLeverClick();
@@ -243,6 +338,7 @@ public class PuzzleSwitch : MonoBehaviour
 
     void SnapTo(float targetAngle)
     {
+        _snapTargetAngle = targetAngle;
         if (_snapCoroutine != null) StopCoroutine(_snapCoroutine);
         _snapCoroutine = StartCoroutine(SnapCoroutine(targetAngle));
     }
@@ -361,12 +457,13 @@ public class PuzzleSwitch : MonoBehaviour
 
     public void SetInteractable(bool interactable)
     {
+        if (!interactable) CancelInteraction();
         _isInteractable = interactable;
-        Debug.Log($"[PuzzleSwitch] {gameObject.name} interactable set to {interactable}");
     }
 
     public void SetActivated(bool active)
     {
+        CancelInteraction();
         IsOn = active;
         _leverNormal = active ? 0f : 1f;
         SetMiddleState(false);
@@ -376,6 +473,7 @@ public class PuzzleSwitch : MonoBehaviour
 
     public void SetSolvedState()
     {
+        CancelInteraction();
         _isSolved    = true;
         IsOn         = true;
         _leverNormal = 0f;
