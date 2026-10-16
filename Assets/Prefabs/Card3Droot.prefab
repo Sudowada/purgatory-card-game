@@ -51,16 +51,15 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::Card3DView
   sourceCard: {fileID: 2173076867130338873}
   faceValueText: {fileID: 530073612187007665}
-  faceValueTextBottomRight: {fileID: 4652320718421278283}
   suitTopLeftText: {fileID: 4543237949603838640}
   suitBottomRightText: {fileID: 3443525810434797382}
   pointValueText: {fileID: 3417770666792514107}
-  pointValueTextBottomRight: {fileID: 8730838150755636129}
   decayText: {fileID: 5377393468923199554}
   redSuitColor: {r: 0.54, g: 0.12, b: 0.12, a: 1}
   blackSuitColor: {r: 0.11, g: 0.09, b: 0.07, a: 1}
   normalDecayColor: {r: 0.11, g: 0.09, b: 0.07, a: 1}
   fullyDecayedColor: {r: 0.35, g: 0.05, b: 0.05, a: 1}
+  syncNamedMirroredText: 1
 --- !u!65 &2094801118640952167
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -125,11 +124,27 @@ MonoBehaviour:
   hoverBrightnessMultiplier: 1.12
   hoverEmissionStrength: 0.12
   hoverBrightnessSpeed: 18
+  clickToOffer: 1
   allowClickSelection: 1
   clickTimeThreshold: 0.2
   dragPixelThreshold: 6
   dragLift: 0.035
   dragTowardCamera: 0.03
+  limitHandDragToViewport: 1
+  handDragViewportMin: {x: 0.08, y: 0.16}
+  handDragViewportMax: {x: 0.92, y: 0.84}
+  enableDragLean: 1
+  dragLeanMaxRoll: 18
+  dragLeanMaxPitch: 7
+  dragLeanPixelsPerSecondForMax: 1200
+  dragLeanSmoothSpeed: 18
+  straightenCardWhileDragging: 1
+  dragHangEulerOffset: {x: 0, y: 0, z: 0}
+  dragHangDownOffset: 0.025
+  dragHangRotateSpeed: 24
+  dragSwingSpring: 95
+  dragSwingDamping: 11
+  dragSwingOvershootLimit: 1.35
   altarAnticipationDuration: 0.035
   altarAnticipationTowardCamera: 0.018
   altarAnticipationScale: 1.045
@@ -137,6 +152,9 @@ MonoBehaviour:
   altarFlightOvershoot: 1.22
   altarPreviewScale: 1.025
   altarReturnToHandSpeed: 24
+  offeringBurnColor: {r: 1, g: 0.22, b: 0.04, a: 1}
+  offeringBurnEmissionStrength: 2
+  offeringBurnScalePop: 1.05
   swapPunchDistance: 0.012
   swapPunchDuration: 0.15
 --- !u!114 &2149775156299717330
@@ -160,6 +178,32 @@ MonoBehaviour:
   normalPipScaleMultiplier: 1
   acePipScaleMultiplier: 2.2
   useYAxisForRows: 1
+--- !u!114 &780601234567890001
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 174684175197529509}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 80c0cd5d051b4385b1cecc5338a72e24, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::CardAttackVisuals
+  cardVisualRoot: {fileID: 2853752208219291028}
+  attackAnchor: {fileID: 0}
+  shieldAnchor: {fileID: 0}
+  attackIndicatorPrefab: {fileID: 0}
+  shieldImpactPrefab: {fileID: 0}
+  attackOffset: {x: 0, y: 0.015, z: 0.07}
+  shieldOffset: {x: 0, y: 0.003, z: 0}
+  bobHeight: 0.003
+  bobSpeed: 0.4
+  shieldDuration: 0.35
+  shieldRiseDuration: 0.07
+  shieldExitDuration: 0.12
+  undoExitDuration: 0.08
+  shieldPopScale: 1.12
 --- !u!1 &478573710522328265
 GameObject:
   m_ObjectHideFlags: 0
@@ -1558,6 +1602,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::Card
   cardValue: 0
   cardSuit: 
+  pointDamageTaken: 0
   faceValue: 0
   rotThreshold: 0
   decayLevel: 0
@@ -1574,29 +1619,3 @@ MeshRenderer:
   m_CorrespondingSourceObject: {fileID: 5033405585667272595, guid: 995e18948cee594438d49e2b31668c46, type: 3}
   m_PrefabInstance: {fileID: 2310392779896314495}
   m_PrefabAsset: {fileID: 0}
---- !u!114 &780601234567890001
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 174684175197529509}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 80c0cd5d051b4385b1cecc5338a72e24, type: 3}
-  m_Name:
-  m_EditorClassIdentifier: Assembly-CSharp::CardAttackVisuals
-  cardVisualRoot: {fileID: 2853752208219291028}
-  attackAnchor: {fileID: 0}
-  shieldAnchor: {fileID: 0}
-  attackIndicatorPrefab: {fileID: 0}
-  shieldImpactPrefab: {fileID: 0}
-  attackOffset: {x: 0, y: 0.015, z: 0.07}
-  shieldOffset: {x: 0, y: 0.003, z: 0}
-  bobHeight: 0.003
-  bobSpeed: 2.5
-  shieldDuration: 0.35
-  shieldRiseDuration: 0.07
-  shieldExitDuration: 0.12
-  undoExitDuration: 0.08
-  shieldPopScale: 1.12
