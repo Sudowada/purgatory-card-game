@@ -147,18 +147,35 @@ public sealed class CardAttackVisuals : MonoBehaviour
         bool keepInFrontOfCamera = false)
     {
         Transform root = Root;
-        Vector3 safeOffset = offset;
+        Vector3 localOffset = offset;
+
         if (keepInFrontOfCamera)
-            safeOffset.z = Mathf.Min(safeOffset.z, -0.004f);
+        {
+            // CardVisual is rotated 90 degrees relative to Card3Droot, so its
+            // local Z axis is the card face normal. Choose the side facing the
+            // active camera instead of assuming local -Z is always the front.
+            localOffset.z = 0f;
+            Vector3 cardPoint = anchor != null
+                ? anchor.position
+                : root.TransformPoint(localOffset);
+            Vector3 faceNormal = root.forward.normalized;
+            Vector3 towardCamera = Camera.main != null
+                ? Camera.main.transform.position - cardPoint
+                : Vector3.up;
+            float faceSide = Vector3.Dot(faceNormal, towardCamera) >= 0f ? 1f : -1f;
+            float frontGap = Mathf.Max(attackViewOffset, 0.004f);
+            effect.transform.position = cardPoint + faceNormal * faceSide * frontGap;
+        }
+        else
+        {
+            effect.transform.position = anchor != null
+                ? anchor.position
+                : root.TransformPoint(localOffset);
+        }
 
-        effect.transform.position = anchor != null ? anchor.position : root.TransformPoint(safeOffset);
+        // The placeholder sprite lies in its local XY plane. Keep it aligned
+        // with the card surface; rotating it another 90 degrees turns it edge-on.
         effect.transform.rotation = anchor != null ? anchor.rotation : root.rotation;
-        if (effect.GetComponent<SpriteRenderer>() != null)
-            effect.transform.rotation *= Quaternion.Euler(90f, 0f, 0f);
-
-        if (keepInFrontOfCamera && Camera.main != null)
-            effect.transform.position -= Camera.main.transform.forward * attackViewOffset;
-
         effect.transform.localScale = scale;
     }
 
