@@ -64,8 +64,8 @@ public class CardOfferingController : MonoBehaviour
     [Tooltip("Controls the preview row center. Position = row center, rotation = base angle for the preview cards.")]
     [SerializeField] private Transform offeringPreviewCenter;
 
-    [Tooltip("Optional roll applied in the camera-facing preview plane.")]
-    [SerializeField] private Vector3 previewRotationOffsetEuler = Vector3.zero;
+    [Tooltip("Additional Euler rotation applied to every preview card. Use X = 90 if you want the preview to face the camera more directly.")]
+    [SerializeField] private Vector3 previewRotationOffsetEuler = new Vector3(90f, 0f, 0f);
 
     [Tooltip("How high above OfferingPreviewCenter the preview row appears.")]
     [SerializeField] private float previewHeightOffset = 0.12f;
@@ -758,6 +758,7 @@ public class CardOfferingController : MonoBehaviour
         ghost.transform.localPosition = Vector3.zero;
         ghost.transform.localRotation = Quaternion.identity;
         ghost.transform.localScale = sourceWorldScale * previewScale;
+        CopyRendererPropertyBlocks(sourceVisual, ghost.transform);
         StripPreviewGameplayComponents(ghost);
 
         // Separate focus copy. This remains based on the ORIGINAL card
@@ -771,6 +772,7 @@ public class CardOfferingController : MonoBehaviour
         focus.transform.localPosition = Vector3.zero;
         focus.transform.localRotation = Quaternion.identity;
         focus.transform.localScale = sourceWorldScale * previewScale;
+        CopyRendererPropertyBlocks(sourceVisual, focus.transform);
         StripPreviewGameplayComponents(focus);
 
         bool isRedSuit = IsRedSuitCard(card.SourceCard);
@@ -823,6 +825,54 @@ public class CardOfferingController : MonoBehaviour
         root.SetActive(false);
 
         pendingPreviews[card] = entry;
+    }
+
+    private void CopyRendererPropertyBlocks(Transform sourceRoot, Transform destinationRoot)
+    {
+        if (sourceRoot == null || destinationRoot == null)
+            return;
+
+        var propertyBlock = new MaterialPropertyBlock();
+        foreach (Renderer sourceRenderer in sourceRoot.GetComponentsInChildren<Renderer>(true))
+        {
+            if (sourceRenderer == null)
+                continue;
+
+            string relativePath = GetRelativeTransformPath(sourceRoot, sourceRenderer.transform);
+            if (relativePath == null)
+                continue;
+
+            Transform destinationTransform = string.IsNullOrEmpty(relativePath)
+                ? destinationRoot
+                : destinationRoot.Find(relativePath);
+            if (destinationTransform == null)
+                continue;
+
+            Renderer destinationRenderer =
+                destinationTransform.GetComponent(sourceRenderer.GetType()) as Renderer;
+            if (destinationRenderer == null)
+                continue;
+
+            sourceRenderer.GetPropertyBlock(propertyBlock);
+            destinationRenderer.SetPropertyBlock(propertyBlock);
+            propertyBlock.Clear();
+        }
+    }
+
+    private string GetRelativeTransformPath(Transform root, Transform target)
+    {
+        if (root == target)
+            return string.Empty;
+
+        string path = target.name;
+        Transform current = target.parent;
+        while (current != null && current != root)
+        {
+            path = current.name + "/" + path;
+            current = current.parent;
+        }
+
+        return current == root ? path : null;
     }
 
     private void StripPreviewGameplayComponents(GameObject clone)
@@ -1673,38 +1723,15 @@ public class CardOfferingController : MonoBehaviour
         out Quaternion worldRotation)
     {
         float centeredIndex = index - (totalCount - 1) * 0.5f;
-        Camera cameraToUse = GetPreviewInteractionCamera();
-
-        Vector3 rowRight = cameraToUse != null
-            ? cameraToUse.transform.right
-            : offeringPreviewCenter.right;
 
         worldPosition =
             offeringPreviewCenter.position +
             Vector3.up * previewHeightOffset +
-            rowRight * (centeredIndex * previewCardSpacing);
+            offeringPreviewCenter.right * (centeredIndex * previewCardSpacing);
 
-        if (cameraToUse != null)
-        {
-            // Card3Droot's CardVisual child is rotated +90 degrees around X,
-            // so the card face normal is local -Y on this root. Compensate for
-            // that child rotation so the visible face points toward the player.
-            Quaternion cameraFacing = Quaternion.LookRotation(
-                -cameraToUse.transform.forward,
-                cameraToUse.transform.up);
-            Quaternion previewRoll = Quaternion.Euler(
-                0f, 0f, previewRotationOffsetEuler.z);
-            worldRotation =
-                cameraFacing *
-                previewRoll *
-                Quaternion.Euler(-90f, 0f, 0f);
-        }
-        else
-        {
-            worldRotation =
-                offeringPreviewCenter.rotation *
-                Quaternion.Euler(previewRotationOffsetEuler);
-        }
+        worldRotation =
+            offeringPreviewCenter.rotation *
+            Quaternion.Euler(previewRotationOffsetEuler);
     }
 
     private void ReturnCardToHand(Card3DInteractable card)

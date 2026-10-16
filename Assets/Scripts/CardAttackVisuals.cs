@@ -18,6 +18,8 @@ public sealed class CardAttackVisuals : MonoBehaviour
     [SerializeField, Min(0f)] private float attackViewOffset = 0.01f;
     [Tooltip("Raises the attack icon above the card in camera space.")]
     [SerializeField, Min(0f)] private float attackHeightAboveCard = 0.12f;
+    [Tooltip("Screen-space gap between the card's upper edge and its attack marker.")]
+    [SerializeField, Min(0f)] private float attackScreenGapPixels = 30f;
     [SerializeField] private Vector3 shieldOffset = new Vector3(0f, 0.003f, 0f);
     [Header("Attack Float")]
     [SerializeField, Min(0f)] private float bobHeight = 0.003f;
@@ -153,26 +155,22 @@ public sealed class CardAttackVisuals : MonoBehaviour
 
         if (keepInFrontOfCamera)
         {
-            // Float the telegraph above the card in screen space so it stays
-            // readable across the hand fan and never clips into the card mesh.
-            Vector3 cardPoint = anchor != null ? anchor.position : root.position;
             Vector3 cameraUp = cameraToUse != null
                 ? cameraToUse.transform.up
                 : Vector3.up;
             Vector3 towardCamera = cameraToUse != null
                 ? -cameraToUse.transform.forward
                 : root.forward;
-            float frontGap = Mathf.Max(attackViewOffset, 0.01f);
+            float frontGap = Mathf.Max(attackViewOffset, 0.025f);
 
             effect.transform.position =
-                cardPoint +
-                cameraUp * attackHeightAboveCard +
+                GetIndicatorPositionAboveCard(root, cameraToUse, anchor) +
                 towardCamera * frontGap;
 
-            // Rotate the arrow sprite so its tip points down toward the card.
+            // The placeholder arrow artwork itself points down toward the card.
             effect.transform.rotation = cameraToUse != null
-                ? Quaternion.LookRotation(towardCamera, cameraUp) * Quaternion.Euler(0f, 0f, 180f)
-                : root.rotation * Quaternion.Euler(0f, 0f, 180f);
+                ? Quaternion.LookRotation(towardCamera, cameraUp)
+                : root.rotation;
         }
         else
         {
@@ -185,6 +183,54 @@ public sealed class CardAttackVisuals : MonoBehaviour
         effect.transform.localScale = scale;
     }
 
+    private Vector3 GetIndicatorPositionAboveCard(Transform root, Camera cameraToUse, Transform anchor)
+    {
+        Vector3 fallbackPoint = anchor != null ? anchor.position : root.position;
+        if (cameraToUse == null)
+            return fallbackPoint + Vector3.up * attackHeightAboveCard;
+
+        Renderer[] renderers = Root.GetComponentsInChildren<Renderer>(true);
+        float minX = float.PositiveInfinity;
+        float maxX = float.NegativeInfinity;
+        float maxY = float.NegativeInfinity;
+        bool foundVisibleCorner = false;
+
+        foreach (Renderer renderer in renderers)
+        {
+            if (renderer == null || !renderer.enabled)
+                continue;
+
+            Bounds bounds = renderer.bounds;
+            Vector3 center = bounds.center;
+            Vector3 extents = bounds.extents;
+            for (int cornerIndex = 0; cornerIndex < 8; cornerIndex++)
+            {
+                Vector3 corner = center + new Vector3(
+                    (cornerIndex & 1) == 0 ? -extents.x : extents.x,
+                    (cornerIndex & 2) == 0 ? -extents.y : extents.y,
+                    (cornerIndex & 4) == 0 ? -extents.z : extents.z);
+                Vector3 screenPoint = cameraToUse.WorldToScreenPoint(corner);
+                if (screenPoint.z <= 0f)
+                    continue;
+
+                minX = Mathf.Min(minX, screenPoint.x);
+                maxX = Mathf.Max(maxX, screenPoint.x);
+                maxY = Mathf.Max(maxY, screenPoint.y);
+                foundVisibleCorner = true;
+            }
+        }
+
+        Vector3 rootScreenPoint = cameraToUse.WorldToScreenPoint(fallbackPoint);
+        if (!foundVisibleCorner || rootScreenPoint.z <= 0f)
+            return fallbackPoint + cameraToUse.transform.up * attackHeightAboveCard;
+
+        Vector3 aboveCardScreenPoint = new Vector3(
+            (minX + maxX) * 0.5f,
+            maxY + attackScreenGapPixels,
+            rootScreenPoint.z);
+        return cameraToUse.ScreenToWorldPoint(aboveCardScreenPoint);
+    }
+
     private void FaceIntentLabelToCamera()
     {
         if (attackInstance == null || Camera.main == null)
@@ -194,12 +240,11 @@ public sealed class CardAttackVisuals : MonoBehaviour
         if (label == null)
             return;
 
-        Vector3 towardCamera = -Camera.main.transform.forward;
-        // The current camera-facing orientation is reversed for this label in the
-        // game view, so roll it 180 degrees to make the words read correctly.
+        // Legacy TextMesh faces along local -Z, so its +Z axis points away
+        // from the camera while the text's front remains toward the player.
         label.transform.rotation = Quaternion.LookRotation(
-            towardCamera,
-            Camera.main.transform.up) * Quaternion.Euler(0f, 0f, 180f);
+            Camera.main.transform.forward,
+            Camera.main.transform.up);
     }
 
     private void LateUpdate()
@@ -232,7 +277,7 @@ public sealed class CardAttackVisuals : MonoBehaviour
         if (shield ? shieldSprite != null : attackSprite != null) return shield ? shieldSprite : attackSprite;
         string[] rows = shield
             ? new[] { "011111110", "111111111", "110000011", "110000011", "110000011", "011000110", "001101100", "000111000", "000010000" }
-            : new[] { "000010000", "000111000", "001111100", "011111110", "000111000", "000111000", "000111000", "000111000", "000000000" };
+            : new[] { "000000000", "000111000", "000111000", "000111000", "011111110", "001111100", "000111000", "000010000", "000000000" };
         var texture = new Texture2D(9, 9, TextureFormat.RGBA32, false);
         texture.filterMode = FilterMode.Point;
         texture.wrapMode = TextureWrapMode.Clamp;
