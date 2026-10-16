@@ -165,6 +165,10 @@ public class GameStateManager : MonoBehaviour
         }
     }
 
+    // Shop camera transitions also need to hide the player body while the
+    // normal game state remains unchanged.
+    public void SetPlayerModelVisible(bool visible) => SetPlayerVisible(visible);
+
     private IEnumerator MoveCameraToWorldPoint(Vector3 targetPosition, Quaternion targetRotation, bool instant)
     {
         if (instant)

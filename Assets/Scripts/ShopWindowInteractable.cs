@@ -30,6 +30,48 @@ public class ShopWindowInteractable : MonoBehaviour
     private void ClickTrace(string message)
     { if (debugClicks) Debug.Log("[ShopClick] " + message, this); }
     private bool previousControllerEnabled, previousCursorVisible;
+    private Renderer[] hiddenPlayerRenderers;
+    private bool[] previousPlayerRendererStates;
+
+    // Keep the player body from clipping through the close shop camera. Store
+    // each renderer's original state so already-hidden parts stay hidden later.
+    private void HidePlayerModel()
+    {
+        GameStateManager.Instance?.SetPlayerModelVisible(false);
+        if (playerController == null) return;
+
+        hiddenPlayerRenderers = playerController.GetComponentsInChildren<Renderer>(true);
+        previousPlayerRendererStates = new bool[hiddenPlayerRenderers.Length];
+        for (int i = 0; i < hiddenPlayerRenderers.Length; i++)
+        {
+            Renderer renderer = hiddenPlayerRenderers[i];
+            if (renderer == null) continue;
+            previousPlayerRendererStates[i] = renderer.enabled;
+            renderer.enabled = false;
+        }
+    }
+
+    private void RestorePlayerModel()
+    {
+        if (hiddenPlayerRenderers != null)
+        {
+            for (int i = 0; i < hiddenPlayerRenderers.Length; i++)
+            {
+                Renderer renderer = hiddenPlayerRenderers[i];
+                if (renderer != null && previousPlayerRendererStates != null &&
+                    i < previousPlayerRendererStates.Length)
+                    renderer.enabled = previousPlayerRendererStates[i];
+            }
+        }
+        hiddenPlayerRenderers = null;
+        previousPlayerRendererStates = null;
+
+        // Preserve the visibility expected by the current game state. In card
+        // mode the body stays hidden; in exploration it becomes visible again.
+        if (GameStateManager.Instance != null)
+            GameStateManager.Instance.SetPlayerModelVisible(
+                GameStateManager.Instance.CurrentState == GameState.Exploration);
+    }
     private CursorLockMode previousCursorLock;
     private bool cameraSaved;
     private Vector3 heldCameraPosition;
@@ -181,6 +223,8 @@ public class ShopWindowInteractable : MonoBehaviour
         previousControllerEnabled = playerController != null && playerController.enabled;
         previousCursorLock = Cursor.lockState;
         previousCursorVisible = Cursor.visible;
+        // Hide the player before moving the camera or revealing shop content.
+        HidePlayerModel();
         if (playerController != null) playerController.enabled = false;
         Cursor.lockState = CursorLockMode.None;
         Cursor.visible   = true;
@@ -226,6 +270,7 @@ public class ShopWindowInteractable : MonoBehaviour
         SetShopCameraPose(_originalCamPos, _originalCamRot);
         GameManager.Instance?.SetInputBlocked(previousInputBlocked);
         if (playerController != null) playerController.enabled = previousControllerEnabled;
+        RestorePlayerModel();
         Cursor.lockState = previousCursorLock;
         Cursor.visible = previousCursorVisible;
         cameraSaved = false;
