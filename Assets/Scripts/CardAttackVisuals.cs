@@ -15,7 +15,7 @@ public sealed class CardAttackVisuals : MonoBehaviour
     [Header("Offsets (local to moving card visual)")]
     [SerializeField] private Vector3 attackOffset = new Vector3(0f, 0.015f, 0.07f);
     [Tooltip("Moves attack indicators toward the active camera so card meshes cannot hide them.")]
-    [SerializeField, Min(0f)] private float attackViewOffset = 0.025f;
+    [SerializeField, Min(0f)] private float attackViewOffset = 0.005f;
     [SerializeField] private Vector3 shieldOffset = new Vector3(0f, 0.003f, 0f);
     [Header("Attack Float")]
     [SerializeField, Min(0f)] private float bobHeight = 0.003f;
@@ -147,7 +147,11 @@ public sealed class CardAttackVisuals : MonoBehaviour
         bool keepInFrontOfCamera = false)
     {
         Transform root = Root;
-        effect.transform.position = anchor != null ? anchor.position : root.TransformPoint(offset);
+        Vector3 safeOffset = offset;
+        if (keepInFrontOfCamera)
+            safeOffset.z = Mathf.Min(safeOffset.z, -0.004f);
+
+        effect.transform.position = anchor != null ? anchor.position : root.TransformPoint(safeOffset);
         effect.transform.rotation = anchor != null ? anchor.rotation : root.rotation;
         if (effect.GetComponent<SpriteRenderer>() != null)
             effect.transform.rotation *= Quaternion.Euler(90f, 0f, 0f);

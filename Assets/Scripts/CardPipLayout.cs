@@ -25,7 +25,7 @@ public class CardPipLayout : MonoBehaviour
     [SerializeField] private Renderer faceArtRenderer;
 
     [Tooltip("Slightly mutes face art so it sits naturally in the card lighting.")]
-    [SerializeField] private Color faceArtTint = new Color(0.76f, 0.76f, 0.76f, 1f);
+    [SerializeField] private Color faceArtTint = new Color(0.64f, 0.64f, 0.62f, 1f);
 
     [Header("Generic Face Art")]
     [SerializeField] private Texture2D genericJackArt;
@@ -157,10 +157,23 @@ public class CardPipLayout : MonoBehaviour
 
     private void OnEnable()
     {
-        // The first deal assigns card data while card objects may be inactive.
-        // Rebuild as soon as the card becomes active so its first visible frame is correct.
+        // The first deal can assign data while card objects are inactive.
+        // Rebuild when activated so pips are ready on the first visible frame.
         if (pipContainer != null)
             RefreshPips();
+    }
+
+    public bool IsFaceArtRenderer(Renderer candidate)
+    {
+        if (candidate == null)
+            return false;
+
+        if (candidate == faceArtRenderer)
+            return true;
+
+        return faceArtRoot != null &&
+               (candidate.transform == faceArtRoot.transform ||
+                candidate.transform.IsChildOf(faceArtRoot.transform));
     }
 
     private void Update()
@@ -332,13 +345,17 @@ public class CardPipLayout : MonoBehaviour
         instance.text = sourceCard.cardSuit;
 
         bool isRed = sourceCard.cardSuit == "♥" || sourceCard.cardSuit == "♦";
+        // The card faces are dark and weathered, so use muted high-contrast pips.
         instance.color = isRed
-            ? new Color(0.55f, 0.08f, 0.07f)
-            : new Color(0.10f, 0.09f, 0.09f);
+            ? new Color(0.88f, 0.34f, 0.27f)
+            : new Color(0.88f, 0.84f, 0.72f);
 
+        // The card's visible face points along local -Z. The old serialized
+        // offset placed pips almost coplanar with the mesh, where they were clipped.
+        float frontOffset = Mathf.Min(pipLiftY, -0.003f);
         Vector3 localPosition = useYAxisForRows
-            ? new Vector3(normalizedX * xScale, normalizedY * ySpacing, pipLiftY)
-            : new Vector3(normalizedX * xScale, pipLiftY, normalizedY * ySpacing);
+            ? new Vector3(normalizedX * xScale, normalizedY * ySpacing, frontOffset)
+            : new Vector3(normalizedX * xScale, frontOffset, normalizedY * ySpacing);
 
         instance.transform.localPosition = localPosition;
 

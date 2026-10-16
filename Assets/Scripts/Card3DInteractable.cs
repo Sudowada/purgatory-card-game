@@ -2261,11 +2261,19 @@ public class Card3DInteractable : MonoBehaviour
 
         }
 
+        CardPipLayout pipLayout = GetComponent<CardPipLayout>();
+
         foreach (Renderer rendererToUse in renderers)
 
         {
 
             if (rendererToUse == null)
+
+                continue;
+
+            // Face art uses a separate muted tint and must not be brightened by
+            // the card hover/emission effect.
+            if (pipLayout != null && pipLayout.IsFaceArtRenderer(rendererToUse))
 
                 continue;
 
