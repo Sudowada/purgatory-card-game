@@ -37,6 +37,7 @@ public class ShopWindowInteractable : MonoBehaviour
     // each renderer's original state so already-hidden parts stay hidden later.
     private void HidePlayerModel()
     {
+        GameStateManager.Instance?.SetPlayerModelVisible(false);
         if (playerController == null) return;
 
         hiddenPlayerRenderers = playerController.GetComponentsInChildren<Renderer>(true);
@@ -52,16 +53,24 @@ public class ShopWindowInteractable : MonoBehaviour
 
     private void RestorePlayerModel()
     {
-        if (hiddenPlayerRenderers == null) return;
-        for (int i = 0; i < hiddenPlayerRenderers.Length; i++)
+        if (hiddenPlayerRenderers != null)
         {
-            Renderer renderer = hiddenPlayerRenderers[i];
-            if (renderer != null && previousPlayerRendererStates != null &&
-                i < previousPlayerRendererStates.Length)
-                renderer.enabled = previousPlayerRendererStates[i];
+            for (int i = 0; i < hiddenPlayerRenderers.Length; i++)
+            {
+                Renderer renderer = hiddenPlayerRenderers[i];
+                if (renderer != null && previousPlayerRendererStates != null &&
+                    i < previousPlayerRendererStates.Length)
+                    renderer.enabled = previousPlayerRendererStates[i];
+            }
         }
         hiddenPlayerRenderers = null;
         previousPlayerRendererStates = null;
+
+        // Preserve the visibility expected by the current game state. In card
+        // mode the body stays hidden; in exploration it becomes visible again.
+        if (GameStateManager.Instance != null)
+            GameStateManager.Instance.SetPlayerModelVisible(
+                GameStateManager.Instance.CurrentState == GameState.Exploration);
     }
     private CursorLockMode previousCursorLock;
     private bool cameraSaved;
