@@ -148,6 +148,9 @@ public class ShopWindowInteractable : MonoBehaviour
     private int purchaseFrame = -1;
     private bool previousInputBlocked;
     public bool IsOpen => _isZoomedIn;
+
+    // Called as a new round begins so the next shop visit gets fresh inventory.
+    public void InvalidateStockForNextVisit() => stockRound = -1;
     public bool CanInteract => _isZoomedIn && !_isZooming && !_isAnimating;
     public void OpenForRun()
     {
