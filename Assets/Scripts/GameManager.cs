@@ -704,6 +704,7 @@ public class GameManager : MonoBehaviour
         }
         enemyTelegraph?.ClearTelegraph();
         roundNumber++;
+        FindFirstObjectByType<ShopWindowInteractable>()?.InvalidateStockForNextVisit();
         stageNumber = Mathf.Clamp(roundNumber, 1, 8);
         handsLeft   = maxHands;
         LastHandResult = null;
