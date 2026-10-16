@@ -758,7 +758,7 @@ public class CardOfferingController : MonoBehaviour
         ghost.transform.localPosition = Vector3.zero;
         ghost.transform.localRotation = Quaternion.identity;
         ghost.transform.localScale = sourceWorldScale * previewScale;
-        CopyRendererPropertyBlocks(sourceVisual, ghost.transform);
+        CopyRendererPropertyBlocks(sourceVisual, ghost.transform, false);
         StripPreviewGameplayComponents(ghost);
 
         // Separate focus copy. This remains based on the ORIGINAL card
@@ -772,7 +772,7 @@ public class CardOfferingController : MonoBehaviour
         focus.transform.localPosition = Vector3.zero;
         focus.transform.localRotation = Quaternion.identity;
         focus.transform.localScale = sourceWorldScale * previewScale;
-        CopyRendererPropertyBlocks(sourceVisual, focus.transform);
+        CopyRendererPropertyBlocks(sourceVisual, focus.transform, true);
         StripPreviewGameplayComponents(focus);
 
         bool isRedSuit = IsRedSuitCard(card.SourceCard);
@@ -827,15 +827,24 @@ public class CardOfferingController : MonoBehaviour
         pendingPreviews[card] = entry;
     }
 
-    private void CopyRendererPropertyBlocks(Transform sourceRoot, Transform destinationRoot)
+    private void CopyRendererPropertyBlocks(
+        Transform sourceRoot,
+        Transform destinationRoot,
+        bool preserveFaceArtTint)
     {
         if (sourceRoot == null || destinationRoot == null)
             return;
 
-        var propertyBlock = new MaterialPropertyBlock();
+        int baseMapId = Shader.PropertyToID("_BaseMap");
+        int mainTexId = Shader.PropertyToID("_MainTex");
+        int baseColorId = Shader.PropertyToID("_BaseColor");
+        int colorId = Shader.PropertyToID("_Color");
+        var sourceBlock = new MaterialPropertyBlock();
+        var destinationBlock = new MaterialPropertyBlock();
+
         foreach (Renderer sourceRenderer in sourceRoot.GetComponentsInChildren<Renderer>(true))
         {
-            if (sourceRenderer == null)
+            if (sourceRenderer == null || sourceRenderer.GetComponent<TMP_Text>() != null)
                 continue;
 
             string relativePath = GetRelativeTransformPath(sourceRoot, sourceRenderer.transform);
@@ -853,9 +862,33 @@ public class CardOfferingController : MonoBehaviour
             if (destinationRenderer == null)
                 continue;
 
-            sourceRenderer.GetPropertyBlock(propertyBlock);
-            destinationRenderer.SetPropertyBlock(propertyBlock);
-            propertyBlock.Clear();
+            // Do not bring across source colors or opacity: the ghost copy applies
+            // its own red hologram tint and alpha below.
+            destinationRenderer.SetPropertyBlock(null);
+
+            sourceRenderer.GetPropertyBlock(sourceBlock);
+            Texture baseMap = sourceBlock.GetTexture(baseMapId);
+            Texture mainTex = sourceBlock.GetTexture(mainTexId);
+            if (baseMap == null && mainTex == null)
+                continue;
+
+            destinationBlock.Clear();
+            if (baseMap != null)
+                destinationBlock.SetTexture(baseMapId, baseMap);
+            if (mainTex != null)
+                destinationBlock.SetTexture(mainTexId, mainTex);
+
+            if (preserveFaceArtTint)
+            {
+                Color faceArtTint = new Color(0.64f, 0.64f, 0.62f, 1f);
+                Material material = destinationRenderer.sharedMaterial;
+                if (material != null && material.HasProperty(baseColorId))
+                    destinationBlock.SetColor(baseColorId, faceArtTint);
+                if (material != null && material.HasProperty(colorId))
+                    destinationBlock.SetColor(colorId, faceArtTint);
+            }
+
+            destinationRenderer.SetPropertyBlock(destinationBlock);
         }
     }
 
@@ -1923,6 +1956,8 @@ public class CardOfferingController : MonoBehaviour
 
                 material.SetOverrideTag("RenderType", "Transparent");
                 material.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+                if (material.HasProperty("_AlphaClip"))
+                    material.SetFloat("_AlphaClip", 0f);
                 material.DisableKeyword("_ALPHATEST_ON");
                 material.renderQueue = (int)RenderQueue.Transparent;
             }
