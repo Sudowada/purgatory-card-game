@@ -64,8 +64,8 @@ public class CardOfferingController : MonoBehaviour
     [Tooltip("Controls the preview row center. Position = row center, rotation = base angle for the preview cards.")]
     [SerializeField] private Transform offeringPreviewCenter;
 
-    [Tooltip("Additional Euler rotation applied to every preview card. Use X = 90 if you want the preview to face the camera more directly.")]
-    [SerializeField] private Vector3 previewRotationOffsetEuler = new Vector3(90f, 0f, 0f);
+    [Tooltip("Optional roll applied in the camera-facing preview plane.")]
+    [SerializeField] private Vector3 previewRotationOffsetEuler = Vector3.zero;
 
     [Tooltip("How high above OfferingPreviewCenter the preview row appears.")]
     [SerializeField] private float previewHeightOffset = 0.12f;
@@ -1673,15 +1673,34 @@ public class CardOfferingController : MonoBehaviour
         out Quaternion worldRotation)
     {
         float centeredIndex = index - (totalCount - 1) * 0.5f;
+        Camera cameraToUse = GetPreviewInteractionCamera();
+
+        Vector3 rowRight = cameraToUse != null
+            ? cameraToUse.transform.right
+            : offeringPreviewCenter.right;
 
         worldPosition =
             offeringPreviewCenter.position +
             Vector3.up * previewHeightOffset +
-            offeringPreviewCenter.right * (centeredIndex * previewCardSpacing);
+            rowRight * (centeredIndex * previewCardSpacing);
 
-        worldRotation =
-            offeringPreviewCenter.rotation *
-            Quaternion.Euler(previewRotationOffsetEuler);
+        if (cameraToUse != null)
+        {
+            // Preview copies are flat card visuals whose local +Z is their face.
+            // Face each copy toward the active camera and keep the card upright.
+            worldRotation = Quaternion.LookRotation(
+                -cameraToUse.transform.forward,
+                cameraToUse.transform.up);
+
+            if (Mathf.Abs(previewRotationOffsetEuler.z) > 0.001f)
+                worldRotation *= Quaternion.Euler(0f, 0f, previewRotationOffsetEuler.z);
+        }
+        else
+        {
+            worldRotation =
+                offeringPreviewCenter.rotation *
+                Quaternion.Euler(previewRotationOffsetEuler);
+        }
     }
 
     private void ReturnCardToHand(Card3DInteractable card)

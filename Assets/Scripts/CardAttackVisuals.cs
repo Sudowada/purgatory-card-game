@@ -15,7 +15,9 @@ public sealed class CardAttackVisuals : MonoBehaviour
     [Header("Offsets (local to moving card visual)")]
     [SerializeField] private Vector3 attackOffset = new Vector3(0f, 0.015f, 0.07f);
     [Tooltip("Moves attack indicators toward the active camera so card meshes cannot hide them.")]
-    [SerializeField, Min(0f)] private float attackViewOffset = 0.005f;
+    [SerializeField, Min(0f)] private float attackViewOffset = 0.01f;
+    [Tooltip("Raises the attack icon above the card in camera space.")]
+    [SerializeField, Min(0f)] private float attackHeightAboveCard = 0.055f;
     [SerializeField] private Vector3 shieldOffset = new Vector3(0f, 0.003f, 0f);
     [Header("Attack Float")]
     [SerializeField, Min(0f)] private float bobHeight = 0.003f;
@@ -147,35 +149,38 @@ public sealed class CardAttackVisuals : MonoBehaviour
         bool keepInFrontOfCamera = false)
     {
         Transform root = Root;
-        Vector3 localOffset = offset;
+        Camera cameraToUse = Camera.main;
 
         if (keepInFrontOfCamera)
         {
-            // CardVisual is rotated 90 degrees relative to Card3Droot, so its
-            // local Z axis is the card face normal. Choose the side facing the
-            // active camera instead of assuming local -Z is always the front.
-            localOffset.z = 0f;
-            Vector3 cardPoint = anchor != null
-                ? anchor.position
-                : root.TransformPoint(localOffset);
-            Vector3 faceNormal = root.forward.normalized;
-            Vector3 towardCamera = Camera.main != null
-                ? Camera.main.transform.position - cardPoint
+            // Float the telegraph above the card in screen space so it stays
+            // readable across the hand fan and never clips into the card mesh.
+            Vector3 cardPoint = anchor != null ? anchor.position : root.position;
+            Vector3 cameraUp = cameraToUse != null
+                ? cameraToUse.transform.up
                 : Vector3.up;
-            float faceSide = Vector3.Dot(faceNormal, towardCamera) >= 0f ? 1f : -1f;
-            float frontGap = Mathf.Max(attackViewOffset, 0.004f);
-            effect.transform.position = cardPoint + faceNormal * faceSide * frontGap;
+            Vector3 towardCamera = cameraToUse != null
+                ? -cameraToUse.transform.forward
+                : root.forward;
+            float frontGap = Mathf.Max(attackViewOffset, 0.01f);
+
+            effect.transform.position =
+                cardPoint +
+                cameraUp * attackHeightAboveCard +
+                towardCamera * frontGap;
+
+            effect.transform.rotation = cameraToUse != null
+                ? Quaternion.LookRotation(towardCamera, cameraUp)
+                : root.rotation;
         }
         else
         {
             effect.transform.position = anchor != null
                 ? anchor.position
-                : root.TransformPoint(localOffset);
+                : root.TransformPoint(offset);
+            effect.transform.rotation = anchor != null ? anchor.rotation : root.rotation;
         }
 
-        // The placeholder sprite lies in its local XY plane. Keep it aligned
-        // with the card surface; rotating it another 90 degrees turns it edge-on.
-        effect.transform.rotation = anchor != null ? anchor.rotation : root.rotation;
         effect.transform.localScale = scale;
     }
 
@@ -188,11 +193,10 @@ public sealed class CardAttackVisuals : MonoBehaviour
         if (label == null)
             return;
 
-        Vector3 towardCamera = Camera.main.transform.position - label.transform.position;
-        if (towardCamera.sqrMagnitude > 0.000001f)
-            label.transform.rotation = Quaternion.LookRotation(
-                towardCamera.normalized,
-                Camera.main.transform.up);
+        Vector3 towardCamera = -Camera.main.transform.forward;
+        label.transform.rotation = Quaternion.LookRotation(
+            towardCamera,
+            Camera.main.transform.up);
     }
 
     private void LateUpdate()
@@ -200,7 +204,10 @@ public sealed class CardAttackVisuals : MonoBehaviour
         if (attackInstance != null)
         {
             Follow(attackInstance, attackAnchor, attackOffset, attackScale, true);
-            attackInstance.transform.position += Root.up *
+            Vector3 bobAxis = Camera.main != null
+                ? Camera.main.transform.up
+                : Vector3.up;
+            attackInstance.transform.position += bobAxis *
                 (Mathf.Sin(Time.time * bobSpeed * Mathf.PI * 2f) * bobHeight);
             FaceIntentLabelToCamera();
         }
