@@ -132,16 +132,8 @@ public class ShopManager : MonoBehaviour
                       : "[Relics] Coin Flip: no free reroll this round.");
     }
 
-    public static int GetRelicPurchaseCost(RelicType type, int legacyCost)
-    {
-        switch (type)
-        {
-            case RelicType.LoadedDice: return 7;
-            case RelicType.RerollToken: return 4;
-            case RelicType.CoinFlip: return 2;
-            default: return Mathf.Max(0, legacyCost);
-        }
-    }
+    /// <summary>Temporary playtest price: every relic costs one gold in every shop.</summary>
+    public static int GetRelicPurchaseCost(RelicType type, int legacyCost) => 1;
 
     [ContextMenu("Playtest: Grant Economy Relics and 30 Gold")]
     private void GrantEconomyPlaytestRelics()

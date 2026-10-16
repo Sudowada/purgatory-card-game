@@ -14,6 +14,8 @@ public sealed class CardAttackVisuals : MonoBehaviour
     [SerializeField] private GameObject shieldImpactPrefab;
     [Header("Offsets (local to moving card visual)")]
     [SerializeField] private Vector3 attackOffset = new Vector3(0f, 0.015f, 0.07f);
+    [Tooltip("Moves attack indicators toward the active camera so card meshes cannot hide them.")]
+    [SerializeField, Min(0f)] private float attackViewOffset = 0.005f;
     [SerializeField] private Vector3 shieldOffset = new Vector3(0f, 0.003f, 0f);
     [Header("Attack Float")]
     [SerializeField, Min(0f)] private float bobHeight = 0.003f;
@@ -74,6 +76,8 @@ public sealed class CardAttackVisuals : MonoBehaviour
         // Art must never intercept card or preview raycasts.
         foreach (var collider in effect.GetComponentsInChildren<Collider>(true)) collider.enabled = false;
         foreach (var collider in effect.GetComponentsInChildren<Collider2D>(true)) collider.enabled = false;
+        foreach (var renderer in effect.GetComponentsInChildren<Renderer>(true))
+            renderer.sortingOrder = Mathf.Max(renderer.sortingOrder, 30);
         effect.SetActive(presentationVisible);
         return effect;
     }
@@ -96,7 +100,7 @@ public sealed class CardAttackVisuals : MonoBehaviour
         {
             attackInstance = CreateEffect(attackIndicatorPrefab, false);
             attackScale = attackInstance.transform.localScale;
-            Follow(attackInstance, attackAnchor, attackOffset, attackScale);
+            Follow(attackInstance, attackAnchor, attackOffset, attackScale, true);
             if (!string.IsNullOrEmpty(intentText)) SetIntent(intentText);
         }
     }
@@ -135,23 +139,70 @@ public sealed class CardAttackVisuals : MonoBehaviour
         exitScale = EntryScale();
     }
 
-    private void Follow(GameObject effect, Transform anchor, Vector3 offset, Vector3 scale)
+    private void Follow(
+        GameObject effect,
+        Transform anchor,
+        Vector3 offset,
+        Vector3 scale,
+        bool keepInFrontOfCamera = false)
     {
         Transform root = Root;
-        effect.transform.position = anchor != null ? anchor.position : root.TransformPoint(offset);
+        Vector3 localOffset = offset;
+
+        if (keepInFrontOfCamera)
+        {
+            // CardVisual is rotated 90 degrees relative to Card3Droot, so its
+            // local Z axis is the card face normal. Choose the side facing the
+            // active camera instead of assuming local -Z is always the front.
+            localOffset.z = 0f;
+            Vector3 cardPoint = anchor != null
+                ? anchor.position
+                : root.TransformPoint(localOffset);
+            Vector3 faceNormal = root.forward.normalized;
+            Vector3 towardCamera = Camera.main != null
+                ? Camera.main.transform.position - cardPoint
+                : Vector3.up;
+            float faceSide = Vector3.Dot(faceNormal, towardCamera) >= 0f ? 1f : -1f;
+            float frontGap = Mathf.Max(attackViewOffset, 0.004f);
+            effect.transform.position = cardPoint + faceNormal * faceSide * frontGap;
+        }
+        else
+        {
+            effect.transform.position = anchor != null
+                ? anchor.position
+                : root.TransformPoint(localOffset);
+        }
+
+        // The placeholder sprite lies in its local XY plane. Keep it aligned
+        // with the card surface; rotating it another 90 degrees turns it edge-on.
         effect.transform.rotation = anchor != null ? anchor.rotation : root.rotation;
-        if (effect.GetComponent<SpriteRenderer>() != null)
-            effect.transform.rotation *= Quaternion.Euler(90f, 0f, 0f);
         effect.transform.localScale = scale;
+    }
+
+    private void FaceIntentLabelToCamera()
+    {
+        if (attackInstance == null || Camera.main == null)
+            return;
+
+        TextMesh label = attackInstance.GetComponentInChildren<TextMesh>();
+        if (label == null)
+            return;
+
+        Vector3 towardCamera = Camera.main.transform.position - label.transform.position;
+        if (towardCamera.sqrMagnitude > 0.000001f)
+            label.transform.rotation = Quaternion.LookRotation(
+                towardCamera.normalized,
+                Camera.main.transform.up);
     }
 
     private void LateUpdate()
     {
         if (attackInstance != null)
         {
-            Follow(attackInstance, attackAnchor, attackOffset, attackScale);
+            Follow(attackInstance, attackAnchor, attackOffset, attackScale, true);
             attackInstance.transform.position += Root.up *
                 (Mathf.Sin(Time.time * bobSpeed * Mathf.PI * 2f) * bobHeight);
+            FaceIntentLabelToCamera();
         }
         if (shieldInstance == null) return;
         if (!shieldExiting && !burning && Time.time >= shieldStart + shieldDuration)
