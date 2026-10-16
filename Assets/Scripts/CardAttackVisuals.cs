@@ -17,7 +17,7 @@ public sealed class CardAttackVisuals : MonoBehaviour
     [Tooltip("Moves attack indicators toward the active camera so card meshes cannot hide them.")]
     [SerializeField, Min(0f)] private float attackViewOffset = 0.01f;
     [Tooltip("Raises the attack icon above the card in camera space.")]
-    [SerializeField, Min(0f)] private float attackHeightAboveCard = 0.055f;
+    [SerializeField, Min(0f)] private float attackHeightAboveCard = 0.12f;
     [SerializeField] private Vector3 shieldOffset = new Vector3(0f, 0.003f, 0f);
     [Header("Attack Float")]
     [SerializeField, Min(0f)] private float bobHeight = 0.003f;
@@ -169,9 +169,10 @@ public sealed class CardAttackVisuals : MonoBehaviour
                 cameraUp * attackHeightAboveCard +
                 towardCamera * frontGap;
 
+            // Rotate the arrow sprite so its tip points down toward the card.
             effect.transform.rotation = cameraToUse != null
-                ? Quaternion.LookRotation(towardCamera, cameraUp)
-                : root.rotation;
+                ? Quaternion.LookRotation(towardCamera, cameraUp) * Quaternion.Euler(0f, 0f, 180f)
+                : root.rotation * Quaternion.Euler(0f, 0f, 180f);
         }
         else
         {
@@ -194,9 +195,11 @@ public sealed class CardAttackVisuals : MonoBehaviour
             return;
 
         Vector3 towardCamera = -Camera.main.transform.forward;
+        // The current camera-facing orientation is reversed for this label in the
+        // game view, so roll it 180 degrees to make the words read correctly.
         label.transform.rotation = Quaternion.LookRotation(
             towardCamera,
-            Camera.main.transform.up);
+            Camera.main.transform.up) * Quaternion.Euler(0f, 0f, 180f);
     }
 
     private void LateUpdate()
