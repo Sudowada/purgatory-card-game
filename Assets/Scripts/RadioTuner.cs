@@ -142,7 +142,7 @@ public class RadioTuner : MonoBehaviour
         GUI.Label(new Rect(panel.x, panel.y + 8f, width, 30f), $"{State.Band}   {State.Frequency} Hz    |    Volume {Mathf.RoundToInt(volume * 100)}%", label);
         GUI.Label(new Rect(panel.x + 6f, panel.y + 40f, width - 12f, 48f),
             "Drag knobs   |   Click switch or F: AM/FM   |   Space: confirm\nUp/Down: select control   |   Left/Right: adjust", label);
-        GUI.Label(new Rect(panel.x, panel.y + 90f, width, 40f), $"Selected: {SelectedControl}   |   Backspace: undo   |   Delete: clear   |   Esc: leave", label);
+        GUI.Label(new Rect(panel.x, panel.y + 90f, width, 40f), $"Selected: {SelectedControl}   |   Backspace: undo   |   Delete: clear   |   WASD / Esc: leave", label);
         GUI.Label(new Rect(panel.x, panel.y + 132f, width, 36f), $"Stations: {State.Entry.Length}/{State.Code.Length}   {feedback}", label);
     }
 }
