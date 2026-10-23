@@ -26,6 +26,8 @@ public class RadioTuner : MonoBehaviour
     public Transform needle;
     public Vector3 needleStart;
     public Vector3 needleEnd = new Vector3(0.1f, 0f, 0f);
+    [Tooltip("Scales needle travel around the midpoint of Start and End.")]
+    [Min(0f)] public float needleTravelMultiplier = 2f;
 
 
 
@@ -131,6 +133,11 @@ public class RadioTuner : MonoBehaviour
     }
     void UpdateNeedle()
     {
-        if (needle != null) needle.localPosition = Vector3.Lerp(needleStart, needleEnd, NormalizedTuning);
+        if (needle != null)
+        {
+            Vector3 center = (needleStart + needleEnd) * 0.5f;
+            Vector3 offset = Vector3.Lerp(needleStart, needleEnd, NormalizedTuning) - center;
+            needle.localPosition = center + offset * Mathf.Max(0f, needleTravelMultiplier);
+        }
     }
 }
