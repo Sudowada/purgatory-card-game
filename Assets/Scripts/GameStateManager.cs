@@ -74,6 +74,7 @@ public class GameStateManager : MonoBehaviour
 
     private void Update()
     {
+        if (RadioInteractable.Active != null) return;
         if (!enableDebugToggle) return;
 
         var kb = Keyboard.current;

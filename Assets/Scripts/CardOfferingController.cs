@@ -350,6 +350,10 @@ public class CardOfferingController : MonoBehaviour
         if (confirmButton != null)
             confirmButton.SetReadyToOffer(CanConfirm);
 
+        // Radio shares Space/Escape and pointer input with the altar.
+        if (RadioInteractable.Active != null)
+            return;
+
         if (inputLocked)
             return;
 
