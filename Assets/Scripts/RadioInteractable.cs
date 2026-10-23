@@ -20,7 +20,7 @@ public class RadioInteractable : MonoBehaviour
         (SettingsUI.Instance == null || !SettingsUI.Instance.IsOpen);
     static int escapeFrame = -1;
     RadioHoverHighlight highlight;
-    bool zoomed, zooming, captured;
+    bool zoomed, zooming, captured, exiting;
     bool previousControllerEnabled, previousCursorVisible;
     CursorLockMode previousLock;
     Vector3 originalCameraPosition;
@@ -48,16 +48,23 @@ public class RadioInteractable : MonoBehaviour
     void Update()
     {
         var keys = Keyboard.current;
-        if (keys == null) return;
-        if (Active == this && keys.escapeKey.wasPressedThisFrame) { HandleEscape(); return; }
+        if (Active == this && keys != null && keys.escapeKey.wasPressedThisFrame) { HandleEscape(); return; }
+        if (Active == this && !exiting && keys != null &&
+            (keys.wKey.wasPressedThisFrame || keys.aKey.wasPressedThisFrame ||
+             keys.sKey.wasPressedThisFrame || keys.dKey.wasPressedThisFrame))
+        { ForceExit(); return; }
         if (captured && GameStateManager.Instance != null && GameStateManager.Instance.CurrentState != GameState.Exploration)
         { StopAllCoroutines(); Restore(); return; }
-        if (zooming || zoomed || Active != null || !keys.eKey.wasPressedThisFrame) return;
+        bool clicked = Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame;
+        bool pressedE = keys != null && keys.eKey.wasPressedThisFrame;
+        if (zooming || zoomed || Active != null || (!clicked && !pressedE)) return;
         if (SettingsUI.Instance != null && SettingsUI.Instance.IsOpen) return;
         if (GameStateManager.Instance != null && GameStateManager.Instance.CurrentState != GameState.Exploration) return;
         if (playerCamera == null || zoomTarget == null || playerController == null) return;
         if (!playerController.enabled) return;
-        var ray = playerCamera.ScreenPointToRay(new Vector2(Screen.width * 0.5f, Screen.height * 0.5f));
+        Vector2 point = clicked && Cursor.lockState != CursorLockMode.Locked
+            ? Mouse.current.position.ReadValue() : new Vector2(Screen.width * 0.5f, Screen.height * 0.5f);
+        var ray = playerCamera.ScreenPointToRay(point);
         if (Physics.Raycast(ray, out var hit, interactDistance) && (hit.transform == transform || hit.transform.IsChildOf(transform)))
             StartCoroutine(ZoomIn());
     }
@@ -66,6 +73,7 @@ public class RadioInteractable : MonoBehaviour
     {
         Active = this;
         captured = true;
+        exiting = false;
         zooming = true;
         originalCameraPosition = playerCamera.transform.position;
         originalCameraRotation = playerCamera.transform.rotation;
@@ -114,7 +122,8 @@ public class RadioInteractable : MonoBehaviour
 
     public void ForceExit()
     {
-        if (!captured) return;
+        if (!captured || exiting) return;
+        exiting = true;
         StopAllCoroutines();
         if (isActiveAndEnabled && playerCamera != null) StartCoroutine(ZoomOut());
         else Restore();
@@ -131,7 +140,7 @@ public class RadioInteractable : MonoBehaviour
         Cursor.visible = exploring ? previousCursorVisible : true;
         if (knobUIHint != null) knobUIHint.SetActive(false);
         if (highlight != null) highlight.SetZoomedIn(false);
-        zoomed = zooming = false;
+        zoomed = zooming = exiting = false;
         if (Active == this) Active = null;
     }
     void OnDisable() { StopAllCoroutines(); Restore(); }

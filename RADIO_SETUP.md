@@ -17,7 +17,7 @@ If updating from the first package, run Wire Radio again so existing knobs recei
 
 | Input | Action |
 | --- | --- |
-| E while looking at radio | Enter close-up view |
+| Click the radio or press E while looking at it | Enter close-up view |
 | Click and drag top-left knob | Adjust radio volume |
 | Click top-right switch or press F | Toggle AM/FM |
 | Click and drag bottom knob | Tune station |
@@ -25,9 +25,11 @@ If updating from the first package, run Wire Radio again so existing knobs recei
 | Left / Right | Adjust selected control one step |
 | Space | Confirm the current station |
 | Backspace / Delete | Undo last station / clear attempt |
-| Escape | Leave radio |
+| W / A / S / D or Escape | Leave radio |
 
 Left selects AM and Right selects FM while Band is selected. Holding an adjustment arrow repeats after 0.35 seconds, then every 0.1 seconds. Repeated selection of the same band does not toggle it. Confirmation always records the tuned station regardless of which control is selected. Enter is no longer the confirmation key. Card-offering keyboard and pointer input is suspended while the radio is active, so Space does not also trigger an altar press.
+
+Movement keys also cancel the initial zoom. Movement resumes once the camera returns; arrow keys stay assigned to the radio and do not exit the view. A click uses the center reticle while the cursor is locked, or the pointer position when unlocked.
 
 ## Precise, tactile movement
 
@@ -59,4 +61,3 @@ For an optional sliding dial needle, assign Needle and set Needle Start / End in
 Check both mouse and keyboard paths: hover and drag each knob, release and reverse, hit both ends, change band, enter ONE using Space, undo a wrong station, and leave during zoom. Verify Space does not offer cards during radio use, volume leaves other sounds alone, and Escape does not also open settings.
 
 Arrow-key controls are implemented now; no later reminder is needed. No changes have been pushed to GitHub.
-
