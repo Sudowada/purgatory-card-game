@@ -9,7 +9,7 @@ public sealed class RadioStationCode
     public const int FirstFrequency = 440;
     public const int FrequencyStep = 10;
     public RadioBand Band { get; private set; }
-    public int Station { get; private set; }
+    public int Station { get; private set; } = StationsPerBand / 2;
     public int Frequency => FirstFrequency + FrequencyStep * ((int)Band * StationsPerBand + Station);
     public char Letter => (char)('A' + (int)Band * StationsPerBand + Station);
     public string Entry { get; private set; } = "";

@@ -11,6 +11,7 @@ public static class RadioBehaviorChecks
     public static void Main()
     {
         var radio = new RadioStationCode();
+        Check(radio.Station == 6 && radio.Frequency == 500, "Start at midpoint of AM dial");
         for (int i = 0; i < 26; i++)
         {
             if (i == 13) radio.ToggleBand();
@@ -30,6 +31,7 @@ public static class RadioBehaviorChecks
         Check(!radio.Confirm(), "Reward only once");
         radio.Clear(); radio.Backspace(); Check(radio.Entry == "ONE", "Solved state stays solved");
         radio = new RadioStationCode();
+        radio.Tune(0);
         radio.Confirm(); radio.Confirm(); radio.Confirm();
         Check(!radio.Solved && radio.Entry == "AAA", "Wrong code rejected");
         radio.ToggleBand(); radio.Tune(1); radio.Confirm();
