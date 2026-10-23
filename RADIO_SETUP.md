@@ -37,9 +37,9 @@ There is no inertia or animation smoothing. Tuning and its needle snap to 13 pos
 
 Default Drag Sensitivity is **0.0015**, down from 0.004: about **667 horizontal pixels** cover the full range. One tuning step is about 56 pixels and one 2% volume step is about 13 pixels. Lower sensitivity further if needed. Both knobs have an optional click sound on actual value changes, including keyboard adjustments.
 
-Floating values appear above knobs during dragging and remain for 0.7 seconds afterward. With keyboard selection, the selected knob's value stays visible. Volume shows a percentage; tuning shows Hz. Adjust Readout Offset Pixels, or assign a stationary Readout Anchor under the radio root to position a readout. Avoid parenting this anchor under the rotating mesh if you want it stationary.
+The bottom instruction panel is removed. VOL., AM/FM, and TUNE appear below their controls. Values appear above a control only on hover, while dragging, or when focused with arrow keys. Confirmation messages appear briefly near TUNE. Volume shows a percentage; tuning shows Hz. Adjust Readout Offset Pixels, or assign a stationary Readout Anchor under the radio root to position a readout. Avoid parenting this anchor under the rotating mesh if you want it stationary.
 
-Knob rotation defaults to local Z; choose local X or Y in RadioKnob if the mesh needs it. Negative Rotation Degrees reverses visual rotation. The switch has its own local axis and AM/FM angles, defaulting to X and -20/+20 degrees. Set these to suit a rotary or lever-style mesh.
+Knob rotation defaults to local Z; choose local X or Y in RadioKnob if the mesh needs it. Reverse Visual Rotation defaults to enabled to correct the imported mesh direction; toggle it if a future mesh needs the opposite direction. The switch has its own local axis and AM/FM angles, defaulting to X and -20/+20 degrees. Set these to suit a rotary or lever-style mesh.
 
 ## Code and audio
 
@@ -48,7 +48,7 @@ FM N-Z: **570-690 Hz** in increments of 10.
 
 **ONE = FM 580, FM 570, AM 480**, pressing Space after each selection.
 
-These are fictional puzzle frequencies, not actual audio pitch changes. The player readout shows numbers and entry count without revealing letters. A wrong complete code starts over on the next confirmation. Successful entry fires RadioTuner > On Code Accepted once per scene instance, stops static, and plays the optional Transmission clip through Radio Audio. Connect narrative actions through that event. Persistence across reloads remains for the later story implementation.
+These are fictional puzzle frequencies, not actual audio pitch changes. Hover readouts show numbers without revealing letters. Confirmation briefly shows the recorded count near TUNE. A wrong complete code starts over on the next confirmation. Successful entry fires RadioTuner > On Code Accepted once per scene instance, stops static, and plays the optional Transmission clip through Radio Audio. Connect narrative actions through that event. Persistence across reloads remains for the later story implementation.
 
 Radio volume changes only the assigned radio/static sources. Global Master/Music/SFX settings remain in the existing menu.
 

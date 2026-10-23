@@ -14,6 +14,8 @@ public class RadioBandSwitch : MonoBehaviour
     [Range(0f, 1f)] public float clickVolume = 0.3f;
     Quaternion initialRotation;
     RadioBand previousBand;
+    public Transform readoutAnchor;
+    public float readoutOffsetPixels = 58f;
 
     void Start()
     {
@@ -49,5 +51,15 @@ public class RadioBandSwitch : MonoBehaviour
         if (radio == null || radio.State == null) return;
         visualPivot.localRotation = initialRotation * Quaternion.AngleAxis(
             radio.State.Band == RadioBand.AM ? amAngle : fmAngle, localAxis.normalized);
+    }
+    void OnGUI()
+    {
+        if (radio == null || radio.State == null || !radio.CanInteract) return;
+        var camera = radio.GetComponent<RadioInteractable>().playerCamera;
+        if (camera == null) return;
+        Vector3 position = camera.WorldToScreenPoint(readoutAnchor != null ? readoutAnchor.position : transform.position);
+        bool focused = radio.KeyboardSelectionVisible && radio.SelectedControl == RadioTuner.Control.Band;
+        RadioControlReadout.Draw(position, "AM/FM", radio.State.Band.ToString(),
+            focused || RadioControlReadout.IsHovered(camera, this), readoutOffsetPixels);
     }
 }

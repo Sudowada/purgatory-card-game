@@ -26,14 +26,15 @@ public class RadioTuner : MonoBehaviour
     public Transform needle;
     public Vector3 needleStart;
     public Vector3 needleEnd = new Vector3(0.1f, 0f, 0f);
-    [Header("Readout")]
-    public bool showReadout = true;
+
+
 
     public RadioStationCode State { get; private set; }
     public bool CanInteract => interaction != null && interaction.CanUseControls;
     public float NormalizedTuning => State != null ? State.Station / 12f : 0f;
     RadioInteractable interaction;
-    GUIStyle label;
+    float feedbackUntil;
+    public string Status => Time.unscaledTime < feedbackUntil ? feedback : "";
     string feedback = "";
 
     void Awake()
@@ -120,7 +121,8 @@ public class RadioTuner : MonoBehaviour
             }
             onCodeAccepted.Invoke();
         }
-        else feedback = State.Entry.Length == State.Code.Length ? "No response — try another sequence" : "Station recorded";
+        else feedback = State.Entry.Length == State.Code.Length ? "No response" : $"Recorded {State.Entry.Length}/{State.Code.Length}";
+        feedbackUntil = Time.unscaledTime + 1.5f;
     }
     void ApplyAudio()
     {
@@ -130,19 +132,5 @@ public class RadioTuner : MonoBehaviour
     void UpdateNeedle()
     {
         if (needle != null) needle.localPosition = Vector3.Lerp(needleStart, needleEnd, NormalizedTuning);
-    }
-    void OnGUI()
-    {
-        if (!showReadout || !CanInteract || State == null) return;
-        if (label == null) label = new GUIStyle(GUI.skin.label) { fontSize = 18, alignment = TextAnchor.MiddleCenter, wordWrap = true };
-        float width = Mathf.Min(760f, Screen.width - 24f);
-        Rect panel = new Rect((Screen.width - width) / 2f, Screen.height - 190f, width, 178f);
-        GUI.Box(panel, "");
-        // Do not display the letter mapping or answer to the player.
-        GUI.Label(new Rect(panel.x, panel.y + 8f, width, 30f), $"{State.Band}   {State.Frequency} Hz    |    Volume {Mathf.RoundToInt(volume * 100)}%", label);
-        GUI.Label(new Rect(panel.x + 6f, panel.y + 40f, width - 12f, 48f),
-            "Drag knobs   |   Click switch or F: AM/FM   |   Space: confirm\nUp/Down: select control   |   Left/Right: adjust", label);
-        GUI.Label(new Rect(panel.x, panel.y + 90f, width, 40f), $"Selected: {SelectedControl}   |   Backspace: undo   |   Delete: clear   |   WASD / Esc: leave", label);
-        GUI.Label(new Rect(panel.x, panel.y + 132f, width, 36f), $"Stations: {State.Entry.Length}/{State.Code.Length}   {feedback}", label);
     }
 }

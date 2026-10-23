@@ -10,23 +10,24 @@ public class RadioKnob : MonoBehaviour
     public Transform visualPivot;
     public Vector3 localAxis = Vector3.forward;
     public float rotationDegrees = 270f;
+    public bool reverseVisualRotation = true;
     [Tooltip("Normalized travel per screen pixel. 0.0015 requires about 667 pixels for a full turn.")]
     public float dragSensitivity = 0.0015f;
     [Header("Optional detent sound")]
     public AudioSource clickSource;
     public AudioClip clickClip;
     [Range(0f, 1f)] public float clickVolume = 0.3f;
-    [Header("Floating readout while dragging")]
+    [Header("Hover and keyboard readout")]
     public bool showFloatingValue = true;
     public Transform readoutAnchor;
     public float readoutOffsetPixels = 58f;
-    public float readoutHoldSeconds = 0.7f;
+
     Quaternion initialRotation;
     bool dragging;
     RadioDialMotion motion;
-    float readoutUntil;
+
     Vector2 lastPointer;
-    GUIStyle valueStyle;
+
     static RadioKnob activeDrag;
 
     float CurrentValue => radio == null ? 0f : function == Function.Volume ? radio.volume : radio.NormalizedTuning;
@@ -71,7 +72,7 @@ public class RadioKnob : MonoBehaviour
         motion.Move(travel);
         float snapped = motion.Value;
         if (function == Function.Tuning) radio.SetTuning(snapped); else radio.SetVolume(snapped);
-        readoutUntil = Time.unscaledTime + readoutHoldSeconds;
+
         DrawRotation();
     }
     void DrawRotation()
@@ -81,21 +82,22 @@ public class RadioKnob : MonoBehaviour
             previousDisplayed = CurrentValue;
             if (clickSource != null && clickClip != null) clickSource.PlayOneShot(clickClip, clickVolume);
         }
-        visualPivot.localRotation = initialRotation * Quaternion.AngleAxis((CurrentValue - 0.5f) * rotationDegrees, localAxis.normalized);
+        visualPivot.localRotation = initialRotation * Quaternion.AngleAxis((CurrentValue - 0.5f) * rotationDegrees * (reverseVisualRotation ? -1f : 1f), localAxis.normalized);
     }
     void OnGUI()
     {
-        if (!showFloatingValue || radio == null || radio.State == null || !radio.CanInteract || (!dragging && !KeyboardSelected && Time.unscaledTime >= readoutUntil)) return;
+        if (radio == null || radio.State == null || !radio.CanInteract) return;
         var camera = radio.GetComponent<RadioInteractable>().playerCamera;
         if (camera == null) return;
         Vector3 position = camera.WorldToScreenPoint(readoutAnchor != null ? readoutAnchor.position : transform.position);
         if (position.z <= 0f) return;
-        if (valueStyle == null) valueStyle = new GUIStyle(GUI.skin.label) { fontSize = 22, alignment = TextAnchor.MiddleCenter };
+
         string text = function == Function.Volume ? $"{Mathf.RoundToInt(radio.volume * 100)}%" : $"{radio.State.Frequency} Hz";
-        Rect box = new Rect(position.x - 66f, Screen.height - position.y - readoutOffsetPixels - 34f, 132f, 34f);
-        GUI.Box(box, "");
-        GUI.Label(box, text, valueStyle);
+        bool hovered = RadioControlReadout.IsHovered(camera, this);
+        RadioControlReadout.Draw(position, function == Function.Volume ? "VOL." : "TUNE", text,
+            showFloatingValue && (dragging || KeyboardSelected || hovered), readoutOffsetPixels,
+            function == Function.Tuning ? radio.Status : "");
     }
     void CancelDrag() { dragging = false; if (activeDrag == this) activeDrag = null; }
-    void OnDisable() { CancelDrag(); readoutUntil = 0f; }
+    void OnDisable() { CancelDrag(); }
 }
