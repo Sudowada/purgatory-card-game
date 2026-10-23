@@ -30,6 +30,7 @@ public class SettingsUI : MonoBehaviour
     private GameObject   _root;
     private CanvasGroup  _cg;
     private bool         _open;
+    public bool IsOpen => _open;
 
     private GameObject   _settingsTab;
     private GameObject   _journalTab;
@@ -79,6 +80,7 @@ public class SettingsUI : MonoBehaviour
     {
         if (Keyboard.current != null && Keyboard.current.escapeKey.wasPressedThisFrame)
         {
+            if (RadioInteractable.HandleEscape()) return;
             if (_open) Close(); else Open();
         }
     }
