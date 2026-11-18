@@ -18,6 +18,7 @@ public enum RelicType
     // Rank/parity relics: append to preserve saved enum values.
     MarkedNumbers, FourthBell,
     OddEtchings, EvenEtchings, RoyalCourt, SmallChange, AceInTheHole,
+    PokerChip, // appended for save-compatible serialized enum IDs
 }
 public enum RelicRarity { Common, Uncommon, Rare }
 
@@ -51,6 +52,9 @@ public class RelicSystem : MonoBehaviour
     private bool _decayAll            = false;
     public float persistentMult = 1.0f;
     public float LoadedDiceMult { get; private set; }
+    // Commit-only result: 2 on heads, 0 on tails, 1 without a Poker Chip roll.
+    // Score previews must NEVER roll the coin or change this value.
+    public int LastPokerChipMultiplier { get; private set; } = 1;
 
     public void OnShopRerolled()
     {
@@ -72,6 +76,7 @@ public class RelicSystem : MonoBehaviour
             case RelicType.TimeEngine:
             case RelicType.ComboBank:
             case RelicType.GoldenCard:
+            case RelicType.PokerChip:
             case RelicType.GlassCannon:
             case RelicType.DoubleDecay:
                 return RelicRarity.Rare;
@@ -307,6 +312,9 @@ public class RelicSystem : MonoBehaviour
     // ─────────────────────────────────────────────────────────────────────────
     public int ApplyRelicModifiers(ComboResult result, bool consumeOneShotEffects = true)
     {
+        // Only committed non-penalty hands roll the chip. Previewing the hand
+        // must not consume randomness or rewrite last committed payout.
+        if (consumeOneShotEffects) LastPokerChipMultiplier = 1;
         // Penalty hands — relics don't reduce penalty except GlassCannon doubles it
         if (result.isPenalty)
         {
@@ -388,13 +396,31 @@ public class RelicSystem : MonoBehaviour
         // ── FINAL: Points × +Mult × xMult × Difference xMult + flat ──────────
         int finalScore = Mathf.Max(0,
             Mathf.RoundToInt(result.points * addMult * mulMult * result.tierMult) + flatBonus);
+        string pokerChipMessage = "";
+        if (consumeOneShotEffects && HasRelic(RelicType.PokerChip))
+        {
+            float chance = ShopManager.Instance != null
+                ? ShopManager.Instance.PokerChipWinChance : 0.5f;
+            bool heads = Random.value < chance;
+            LastPokerChipMultiplier = heads ? 2 : 0;
+            // The chip acts LAST on the complete hand score (including flat
+            // bonuses), not just on one scoring ingredient. 0 truly means 0.
+            finalScore = heads
+                ? (int)System.Math.Min(int.MaxValue, (long)finalScore * 2L) : 0;
+            mulMult *= LastPokerChipMultiplier; // Show the outcome in the HUD.
+            result.multiplicativeMult = mulMult;
+            pokerChipMessage = heads
+                ? " | POKER CHIP: HEADS x2"
+                : " | POKER CHIP: TAILS 0";
+        }
         result.finalScore = finalScore;
         // Keep the in-world OFFER result message aligned with the four
         // distinct scoring ingredients shown in ScoreHUD.
         result.description =
             $"{result.comboName} | DIFF +{result.difference} | " +
             $"{result.points:N0} POINTS · +{addMult:0.##} +MULT · " +
-            $"x{mulMult:0.##} xMULT · x{result.tierMult:0.##} DIFF xMULT";
+            $"x{mulMult:0.##} xMULT · x{result.tierMult:0.##} DIFF xMULT" +
+            pokerChipMessage;
         return finalScore;
     }
     // ── Rot threshold modifier (called from Card.InitCardStats) ───────────────
@@ -429,6 +455,10 @@ public class RelicSystem : MonoBehaviour
         RelicType.CoinFlip => new Relic(type, RelicCategory.RuleChanger,
             "Coin Flip", "50% chance after each completed round (3 encounters) to earn a saved free reroll.",
             "Heads, you get another chance."),
+        RelicType.PokerChip => new Relic(type, RelicCategory.RiskChallenge,
+            "Poker Chip",
+            "Flip on each scoring offer: HEADS doubles the entire score; TAILS sets it to 0. Base chance 50%, +1% per Luck (max 95%).",
+            "Gamblers always quit before hitting it big"),
         RelicType.SpadeSeal => new Relic(type, RelicCategory.ComboEngine,
             "Spade Seal", "Each Spade card gains +15 Points while this relic is owned.",
             "Steel remembers every cut."),
