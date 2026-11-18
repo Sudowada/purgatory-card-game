@@ -60,7 +60,21 @@ public class RelicSystem : MonoBehaviour
     {
         switch (type)
         {
-            case RelicType.LoadedDice: return RelicRarity.Rare;
+            // xMult is intentionally rare: the difference tier remains the
+            // reliable source of multiplicative power for every build.
+            case RelicType.DuelistsCode:
+            case RelicType.LoneWolf:
+            case RelicType.GrindCore:
+            case RelicType.HighValueInvest:
+            case RelicType.TimeEngine:
+            case RelicType.ComboBank:
+            case RelicType.GoldenCard:
+            case RelicType.GlassCannon:
+            case RelicType.DoubleDecay:
+                return RelicRarity.Rare;
+            // Loaded Dice and Turn Investor give +Mult, not xMult.
+            case RelicType.LoadedDice:
+            case RelicType.TurnInvestor:
             case RelicType.RerollToken: return RelicRarity.Uncommon;
             case RelicType.CoinFlip: return RelicRarity.Common;
             // Suit-scoring relics are versatile but still reward deckbuilding.
@@ -130,10 +144,10 @@ public class RelicSystem : MonoBehaviour
     {
         switch (suit)
         {
-            case "♠": return HasRelic(RelicType.SpadeSeal) ? 10 : 0;
-            case "♥": return HasRelic(RelicType.HeartSeal) ? 10 : 0;
-            case "♦": return HasRelic(RelicType.DiamondSeal) ? 10 : 0;
-            case "♣": return HasRelic(RelicType.ClubSeal) ? 10 : 0;
+            case "♠": return HasRelic(RelicType.SpadeSeal) ? 15 : 0;
+            case "♥": return HasRelic(RelicType.HeartSeal) ? 15 : 0;
+            case "♦": return HasRelic(RelicType.DiamondSeal) ? 15 : 0;
+            case "♣": return HasRelic(RelicType.ClubSeal) ? 15 : 0;
             default: return 0;
         }
     }
@@ -202,8 +216,6 @@ public class RelicSystem : MonoBehaviour
     public void OnHandPlayed(ComboResult result, bool playerWon)
     {
         _turnsSurvived++;
-        if (HasRelic(RelicType.TurnInvestor))
-            GainMult(RelicType.TurnInvestor, 0.05f);
         if (HasRelic(RelicType.HighValueInvest) && result.scoringCards != null)
             foreach (var c in result.scoringCards)
                 if (c.cardValue >= 10) GainMult(RelicType.HighValueInvest, 0.05f);
@@ -281,12 +293,16 @@ public class RelicSystem : MonoBehaviour
         float addMult = result.additiveMult;
         if (HasRelic(RelicType.LoadedDice)) addMult += LoadedDiceMult;
         // General-purpose additive Mult: compatible with any combo and suit.
-        if (HasRelic(RelicType.SmallMult)) addMult += 2f;
-        if (HasRelic(RelicType.MediumMult)) addMult += 4f;
-        if (HasRelic(RelicType.LargeMult)) addMult += 6f;
-        //   // starts at 1 + comboBonus
+        if (HasRelic(RelicType.SmallMult)) addMult += 3f;
+        if (HasRelic(RelicType.MediumMult)) addMult += 6f;
+        if (HasRelic(RelicType.LargeMult)) addMult += 9f;
+        // Turn Investor: dynamic +Mult from gold HELD, not spent or earned
+        // lifetime gold. Uncapped, recalculated for both preview and scoring.
+        if (HasRelic(RelicType.TurnInvestor) && ShopManager.Instance != null)
+            addMult += (ShopManager.Instance.playerGold / 5) * 2f;
+        // Starts with base 1 + combo bonus.
         float mulMult = 1f;                    // relic multiplicative stack
-        // ── Persistent multiplier ─────────────────────────────────────────────
+        // ── Persistent xMult: harder-to-find, run-scaling relics ─────────────
         mulMult *= persistentMult;
         // ── ComboBank ─────────────────────────────────────────────────────────
         if (HasRelic(RelicType.ComboBank) && _comboBankBonus > 0)
@@ -334,7 +350,7 @@ public class RelicSystem : MonoBehaviour
         result.additiveMult       = addMult;
         result.multiplicativeMult = mulMult;
         result.flatBonus = flatBonus;
-        // ── FINAL: points × addMult × mulMult × tierMult + flat ──────────────
+        // ── FINAL: Points × +Mult × xMult × Difference xMult + flat ──────────
         int finalScore = Mathf.Max(0,
             Mathf.RoundToInt(result.points * addMult * mulMult * result.tierMult) + flatBonus);
         result.finalScore = finalScore;
@@ -364,7 +380,7 @@ public class RelicSystem : MonoBehaviour
     public static Relic MakeRelicStatic(RelicType type) => type switch
     {
         RelicType.LoadedDice => new Relic(type, RelicCategory.ScalingMultiplier,
-            "Loaded Dice", "Gains +3 Mult per successful shop reroll while owned, including free rerolls.",
+            "Loaded Dice", "Gain +3 Mult per successful shop reroll while owned, including free rerolls.",
             "Every second chance carries a weight."),
         RelicType.RerollToken => new Relic(type, RelicCategory.RuleChanger,
             "Reroll Token", "One free reroll per shop visit. Unused visit rerolls expire when you leave.",
@@ -373,25 +389,25 @@ public class RelicSystem : MonoBehaviour
             "Coin Flip", "50% chance after each completed round (3 encounters) to earn a saved free reroll.",
             "Heads, you get another chance."),
         RelicType.SpadeSeal => new Relic(type, RelicCategory.ComboEngine,
-            "Spade Seal", "Each Spade card gains +10 Points while this relic is owned.",
+            "Spade Seal", "Each Spade card gains +15 Points while this relic is owned.",
             "Steel remembers every cut."),
         RelicType.HeartSeal => new Relic(type, RelicCategory.ComboEngine,
-            "Heart Seal", "Each Heart card gains +10 Points while this relic is owned.",
+            "Heart Seal", "Each Heart card gains +15 Points while this relic is owned.",
             "Even sacrifice has a pulse."),
         RelicType.DiamondSeal => new Relic(type, RelicCategory.ComboEngine,
-            "Diamond Seal", "Each Diamond card gains +10 Points while this relic is owned.",
+            "Diamond Seal", "Each Diamond card gains +15 Points while this relic is owned.",
             "Harder than the cell walls."),
         RelicType.ClubSeal => new Relic(type, RelicCategory.ComboEngine,
-            "Club Seal", "Each Club card gains +10 Points while this relic is owned.",
+            "Club Seal", "Each Club card gains +15 Points while this relic is owned.",
             "The mark of a survivor."),
         RelicType.SmallMult => new Relic(type, RelicCategory.ComboEngine,
-            "Cracked Abacus", "Always gain +2 additive Mult.",
+            "Cracked Abacus", "Always gain +3 Mult.",
             "A little more than before."),
         RelicType.MediumMult => new Relic(type, RelicCategory.ComboEngine,
-            "Brass Ledger", "Always gain +4 additive Mult.",
+            "Brass Ledger", "Always gain +6 Mult.",
             "The figures never lie."),
         RelicType.LargeMult => new Relic(type, RelicCategory.ComboEngine,
-            "Gilded Ledger", "Always gain +6 additive Mult.",
+            "Gilded Ledger", "Always gain +9 Mult.",
             "Every debt comes due."),
         RelicType.FourthHand      => new Relic(type, RelicCategory.RuleChanger,       "Fourth Hand",      "Play up to 4 cards per turn.",                                        "More hands, more suffering."),
         RelicType.DuelistsCode    => new Relic(type, RelicCategory.RuleChanger,       "Duelist's Code",   "Play only 1 card — but its score is tripled.",                        "One blow, decisive."),
@@ -399,30 +415,30 @@ public class RelicSystem : MonoBehaviour
         RelicType.ComboMachine    => new Relic(type, RelicCategory.RuleChanger,       "Combo Machine",    "Pairs score as Three of a Kind.",                                     "Two becomes three in purgatory."),
         RelicType.CardCycler      => new Relic(type, RelicCategory.RuleChanger,       "Card Cycler",      "Playing 3+ cards draws 1 additional card.",                           "Motion is survival."),
         RelicType.TacticalDelay   => new Relic(type, RelicCategory.RuleChanger,       "Tactical Delay",   "Skip a turn to draw 2 cards instead.",                                "Patience sharpens the blade."),
-        RelicType.RotAlchemist    => new Relic(type, RelicCategory.DecayManipulation, "Rot Alchemist",    "Each total decay stack in play adds +15% to additive mult.",           "Ruin is a resource."),
+        RelicType.RotAlchemist    => new Relic(type, RelicCategory.DecayManipulation, "Rot Alchemist",    "Each decay stack on played cards adds +0.15 Mult.",           "Ruin is a resource."),
         RelicType.CorrosionEngine => new Relic(type, RelicCategory.DecayManipulation, "Corrosion Engine", "Decay stacks increase face value instead of decreasing it.",           "Corruption breeds power."),
         RelicType.SlowRot         => new Relic(type, RelicCategory.DecayManipulation, "Slow Rot",         "Cards only decay every other turn.",                                   "Time moves differently here."),
         RelicType.RotBurst        => new Relic(type, RelicCategory.DecayManipulation, "Rot Burst",        "When a card fully rots, gain +10 flat score.",                        "Death is an offering."),
         RelicType.Purifier        => new Relic(type, RelicCategory.DecayManipulation, "Purifier",         "After each turn, remove 1 decay from your most-decayed card.",        "Something resists the rot."),
         RelicType.NecromancyRelic => new Relic(type, RelicCategory.DecayManipulation, "Necromancy",       "Fully rotten cards gain +8 point value when scored.",                 "The dead serve willingly."),
-        RelicType.PairAddict      => new Relic(type, RelicCategory.ComboEngine,       "Pair Addict",      "Pairs triple the additive multiplier.",                                "Symmetry is sacred."),
-        RelicType.LowCardGenius   => new Relic(type, RelicCategory.ComboEngine,       "Low Card Genius",  "If all played cards are ≤4, double the additive multiplier.",         "Weakness weaponised."),
+        RelicType.PairAddict      => new Relic(type, RelicCategory.ComboEngine,       "Pair Addict",      "Playing a Pair or Two Pair triples the base +Mult.",                                "Symmetry is sacred."),
+        RelicType.LowCardGenius   => new Relic(type, RelicCategory.ComboEngine,       "Low Card Genius",  "If all played cards are ≤4, double your +Mult.",         "Weakness weaponised."),
         RelicType.HighRoller      => new Relic(type, RelicCategory.ComboEngine,       "High Roller",      "Cards with face value ≥10 each contribute +5 bonus points.",          "Only royalty survives."),
-        RelicType.OddCollector    => new Relic(type, RelicCategory.ComboEngine,       "Odd Collector",    "Each odd-valued card adds +20% to additive mult.",                    "The odd ones hold the power."),
-        RelicType.EvenMaster      => new Relic(type, RelicCategory.ComboEngine,       "Even Master",      "Each even-valued card adds +20% to additive mult.",                   "Balance is strength."),
-        RelicType.ComboBank       => new Relic(type, RelicCategory.ComboEngine,       "Combo Bank",       "Each unused combo type adds ×10% multiplicative per round.",          "Patience compounds interest."),
-        RelicType.LoneWolf        => new Relic(type, RelicCategory.ScalingMultiplier, "Lone Wolf",        "Each single-card play permanently adds +0.2 multiplicative Mult. No cap.", "Alone, unbowed."),
-        RelicType.TurnInvestor    => new Relic(type, RelicCategory.ScalingMultiplier, "Turn Investor",    "Each turn survived adds +5% to persistent mult.",                     "Every breath is compounding interest."),
-        RelicType.GrindCore       => new Relic(type, RelicCategory.ScalingMultiplier, "Grind Core",       "Win streaks add +10% persistent mult per consecutive win.",            "Momentum is everything."),
+        RelicType.OddCollector    => new Relic(type, RelicCategory.ComboEngine,       "Odd Collector",    "Each odd-valued card played adds +0.2 Mult.",                    "The odd ones hold the power."),
+        RelicType.EvenMaster      => new Relic(type, RelicCategory.ComboEngine,       "Even Master",      "Each even-valued card played adds +0.2 Mult.",                   "Balance is strength."),
+        RelicType.ComboBank       => new Relic(type, RelicCategory.ComboEngine,       "Combo Bank",       "Each unused combo type grows your xMult by 0.1 per round.",          "Patience compounds interest."),
+        RelicType.LoneWolf        => new Relic(type, RelicCategory.ScalingMultiplier, "Lone Wolf",        "Each single-card play adds +0.2 to persistent xMult. No cap.", "Alone, unbowed."),
+        RelicType.TurnInvestor    => new Relic(type, RelicCategory.ScalingMultiplier, "Turn Investor",    "Gain +2 Mult for every 5 gold held. No cap; updates when gold changes.",                     "Every breath is compounding interest."),
+        RelicType.GrindCore       => new Relic(type, RelicCategory.ScalingMultiplier, "Grind Core",       "Win streaks add +0.1 to persistent xMult per consecutive win.",            "Momentum is everything."),
         RelicType.PerfectHand     => new Relic(type, RelicCategory.ScalingMultiplier, "Perfect Hand",     "No decayed cards played this hand = +10 flat score.",                 "Purity has its rewards."),
-        RelicType.HighValueInvest => new Relic(type, RelicCategory.ScalingMultiplier, "High Value Fund",  "Each card ≥10 played permanently adds +5% to persistent mult.",       "Invest in excellence."),
-        RelicType.TimeEngine      => new Relic(type, RelicCategory.ScalingMultiplier, "Time Engine",      "Persistent mult grows +8% each round.",                               "Purgatory is patient."),
+        RelicType.HighValueInvest => new Relic(type, RelicCategory.ScalingMultiplier, "High Value Fund",  "Each card ranked 10+ played adds +0.05 to persistent xMult.",       "Invest in excellence."),
+        RelicType.TimeEngine      => new Relic(type, RelicCategory.ScalingMultiplier, "Time Engine",      "Persistent xMult grows +0.08 each round.",                               "Purgatory is patient."),
         RelicType.AnchorCard      => new Relic(type, RelicCategory.CardManipulation,  "Anchor Card",      "Your lowest-value card is immune to decay.",                           "One thing holds."),
-        RelicType.GoldenCard      => new Relic(type, RelicCategory.CardManipulation,  "Golden Card",      "One random card each round scores ×10 multiplicative if played.",     "Fortune favours the desperate."),
+        RelicType.GoldenCard      => new Relic(type, RelicCategory.CardManipulation,  "Golden Card",      "One random card each round grants x10 xMult if played.",     "Fortune favours the desperate."),
         RelicType.DrawReactor     => new Relic(type, RelicCategory.CardManipulation,  "Draw Reactor",     "Playing a Pair or better draws 1 extra card.",                        "Momentum feeds momentum."),
         RelicType.ValueLock       => new Relic(type, RelicCategory.CardManipulation,  "Value Lock",       "Your highest-value card cannot decay.",                                "The crown is protected."),
-        RelicType.GlassCannon     => new Relic(type, RelicCategory.RiskChallenge,     "Glass Cannon",     "Enemy face value doubles — your multiplicative mult triples.",         "Everything to gain. Everything to lose."),
-        RelicType.DoubleDecay     => new Relic(type, RelicCategory.RiskChallenge,     "Double Decay",     "Cards decay twice per turn — multiplicative mult doubled.",            "Rot faster. Score harder."),
+        RelicType.GlassCannon     => new Relic(type, RelicCategory.RiskChallenge,     "Glass Cannon",     "Enemy face value doubles each round — gain x3 xMult.",         "Everything to gain. Everything to lose."),
+        RelicType.DoubleDecay     => new Relic(type, RelicCategory.RiskChallenge,     "Double Decay",     "Decay attacks deal double decay — gain x2 xMult.",            "Rot faster. Score harder."),
         _ => new Relic(type, RelicCategory.RuleChanger, "Unknown", "???")
     };
     public string GetSynergyHint(RelicType type)
@@ -445,8 +461,8 @@ public class RelicSystem : MonoBehaviour
             RelicType.DoubleDecay     => has(RelicType.RotAlchemist)   ? "Synergy: Rot Alchemist" :
                                          has(RelicType.NecromancyRelic)? "Synergy: Necromancy scores rot" : "",
             RelicType.NecromancyRelic => has(RelicType.DoubleDecay)    ? "Synergy: Double Decay" : "",
-            RelicType.ComboBank       => has(RelicType.TurnInvestor)   ? "Synergy: Patience pays double" : "",
-            RelicType.TimeEngine      => has(RelicType.TurnInvestor)   ? "Synergy: Turn Investor stack!" :
+            RelicType.ComboBank       => has(RelicType.TurnInvestor)   ? "Synergy: Gold-backed +Mult with scaling xMult" : "",
+            RelicType.TimeEngine      => has(RelicType.TurnInvestor)   ? "Synergy: +Mult from gold, xMult from time" :
                                          has(RelicType.GrindCore)      ? "Synergy: Win streak + time" : "",
             RelicType.HighRoller      => has(RelicType.PairAddict)     ? "Note: Royals are low-pt cards" : "",
             RelicType.AnchorCard      => has(RelicType.ValueLock)      ? "Synergy: Double protection!" : "",
