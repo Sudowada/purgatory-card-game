@@ -45,6 +45,7 @@ public class ScoreHUD : MonoBehaviour
     private TextMeshProUGUI tierMultValue;
     private TextMeshProUGUI differenceValue;
     private TextMeshProUGUI nextTierHint;
+    private TextMeshProUGUI discardStatus;
     private RectTransform tierTrack;
     private Image tierFill;
     private float tierFillDisplayed;
@@ -157,6 +158,7 @@ public class ScoreHUD : MonoBehaviour
         progress.color = manager.RoundTarget > 0 && manager.RoundScore >= manager.RoundTarget
             ? new Color(0.45f, 0.8f, 0.55f) : new Color(0.85f, 0.66f, 0.32f);
         RefreshScoringIngredients(manager);
+        if (discardStatus != null) discardStatus.text = manager.DiscardHudStatus;
     }
 
     private void RefreshScoringIngredients(GameManager manager)
@@ -306,7 +308,7 @@ public class ScoreHUD : MonoBehaviour
         group.interactable = false;
         group.blocksRaycasts = false;
 
-        RectTransform panel = CreateRect("Score Panel", canvasObject.transform, position, new Vector2(440f, 400f));
+        RectTransform panel = CreateRect("Score Panel", canvasObject.transform, position, new Vector2(440f, 444f));
         Image background = panel.gameObject.AddComponent<Image>();
         background.color = new Color(0.055f, 0.06f, 0.075f, 0.92f);
         background.raycastTarget = false;
@@ -340,6 +342,14 @@ public class ScoreHUD : MonoBehaviour
         tierFill.raycastTarget = false;
         nextTierHint = CreateText("Next Difference Tier", panel, new Vector2(18f, -366f),
             new Vector2(404f, 24f), 16f, new Color(0.77f, 0.75f, 0.68f));
+        RectTransform discardTile = CreateRect("Discard Tile", panel,
+            new Vector2(18f, -401f), new Vector2(404f, 31f));
+        Image discardBackground = discardTile.gameObject.AddComponent<Image>();
+        discardBackground.color = new Color(0.14f, 0.15f, 0.16f);
+        discardBackground.raycastTarget = false;
+        discardStatus = CreateText("Discard Status", discardTile,
+            new Vector2(8f, -6f), new Vector2(388f, 23f), 14f,
+            new Color(0.90f, 0.73f, 0.43f));
     }
 
     private static TextMeshProUGUI CreateIngredient(Transform parent, string name, float x)
