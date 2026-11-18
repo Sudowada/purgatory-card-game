@@ -44,9 +44,9 @@ public class ShopManager : MonoBehaviour
     public int   playerGold        = 0;
     public float rareChanceModifier = 0f;
     [Header("Luck")]
-    [Min(0)] [Tooltip("Each Luck point adds +1 percentage point to Poker Chip's win chance (50% base, 95% cap).")]
+    [Min(0)] [Tooltip("Each Luck point adds +2 percentage points to Poker Chip's win chance (50% base, 95% cap).")]
     public int luck = 0;
-    public float PokerChipWinChance => Mathf.Clamp(0.5f + Mathf.Max(0, luck) * 0.01f, 0.5f, 0.95f);
+    public float PokerChipWinChance => Mathf.Clamp(0.5f + Mathf.Max(0, luck) * 0.02f, 0.5f, 0.95f);
     public List<string> collectibles   = new List<string>();
     private const string CollectibleSaveKey = "Purgatory.Collectibles.v1";
     public const string SlotMachineCollectible = "collectible_slot_machine";
