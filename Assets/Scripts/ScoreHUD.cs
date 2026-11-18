@@ -51,7 +51,6 @@ public class ScoreHUD : MonoBehaviour
     private float tierFillTarget;
     private float tierFlashRemaining;
     private int lastPreviewTier = -1;
-    private bool previewWasActive;
     private Color activeTierColor = TierColors[1];
 
     private float displayedScore;
@@ -167,11 +166,11 @@ public class ScoreHUD : MonoBehaviour
             pointsValue.text = "—";
             combinedMultValue.text = "—";
             tierMultValue.text = "—";
+            tierMultValue.fontSize = 25f;
             differenceValue.text = "DIFF  —";
             nextTierHint.text = "STAGE CARDS TO SEE DIFFERENCE TIERS";
             activeTierColor = TierColors[1];
             tierFillTarget = 0f;
-            previewWasActive = false;
             lastPreviewTier = 0;
         }
         else
@@ -179,7 +178,9 @@ public class ScoreHUD : MonoBehaviour
             int tier = result.isPenalty ? 0 : Mathf.Clamp(result.diffDots, 1, 8);
             pointsValue.text = result.points.ToString("N0");
             combinedMultValue.text = $"×{result.additiveMult * result.multiplicativeMult:0.##}";
-            tierMultValue.text = $"×{result.tierMult:0.##}";
+            // Negative difference scores a fixed penalty; ×0.25 is not applied.
+            tierMultValue.text = result.isPenalty ? "PENALTY" : $"×{result.tierMult:0.##}";
+            tierMultValue.fontSize = result.isPenalty ? 18f : 25f;
             differenceValue.text = result.difference >= 0
                 ? $"DIFF  +{result.difference}" : $"DIFF  {result.difference}";
 
@@ -202,7 +203,6 @@ public class ScoreHUD : MonoBehaviour
 
             if (lastPreviewTier >= 0 && tier > lastPreviewTier)
                 CelebrateTier(tier);
-            previewWasActive = true;
             lastPreviewTier = tier;
         }
 
