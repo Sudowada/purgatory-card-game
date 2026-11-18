@@ -318,7 +318,7 @@ public class CardOfferingController : MonoBehaviour
         GameManager.Instance != null &&
         GameManager.Instance.CanPlayOffering &&
         deckDrawPoint != null &&
-        offeredCards.Count >= Mathf.Max(1, minimumCardsToConfirm) &&
+        offeredCards.Count >= Mathf.Min(MaximumCardsToOffer, Mathf.Max(1, minimumCardsToConfirm)) &&
         offeredCards.Count <= MaximumCardsToOffer &&
         previewEntries.Count == offeredCards.Count;
 
