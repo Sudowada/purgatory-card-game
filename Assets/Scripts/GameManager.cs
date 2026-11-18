@@ -950,7 +950,10 @@ public class GameManager : MonoBehaviour
         if (swappedCard != null)
             swappedCard.cardValue = originalValue;
         if (RelicSystem.Instance != null)
+        {
             result.finalScore = RelicSystem.Instance.ApplyRelicModifiers(result);
+            RelicSystem.Instance.OnSingleCardPlayed(toPlay.Count);
+        }
         int scoreBoost = 0;
         if (!result.isPenalty)
         {
@@ -1047,7 +1050,10 @@ public class GameManager : MonoBehaviour
         if (swappedCard != null)
             swappedCard.cardValue = originalValue;
         if (RelicSystem.Instance != null)
+        {
             result.finalScore = RelicSystem.Instance.ApplyRelicModifiers(result);
+            RelicSystem.Instance.OnSingleCardPlayed(toPlay.Count);
+        }
         int scoreBoost = 0;
         if (!result.isPenalty)
         {
