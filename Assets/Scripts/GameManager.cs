@@ -88,8 +88,10 @@ public class GameManager : MonoBehaviour
         pendingDiscardCards.Where(c => c != null)
             .Select(c => c.GetDisplayValue() + c.cardSuit));
     public string DiscardHudStatus => DiscardActionsRemaining <= 0
-        ? "DISCARD USED  ·  NEXT HAND TO RESET"
-        : $"DISCARD {pendingDiscardCards.Count}/3  ·  HOVER + D TO MARK  ·  {DiscardSelectionLabel}";
+        ? "DISCARD USED  ·  RESET NEXT HAND"
+        : pendingDiscardCards.Count == 0
+            ? "DISCARD 0/3  ·  HOVER + D TO MARK"
+            : $"DISCARD {pendingDiscardCards.Count}/3  ·  HOVER + D  ·  {DiscardSelectionLabel}";
     // ── Game State ────────────────────────────────────────────────────────────
     private List<Card> selectedCards = new List<Card>();
     private int  roundScore          = 0;
