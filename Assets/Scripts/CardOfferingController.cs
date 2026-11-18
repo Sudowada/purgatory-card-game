@@ -407,6 +407,7 @@ public class CardOfferingController : MonoBehaviour
         offeredCards.Add(card);
         card.SetOfferingController(this);
         GetComponent<RandomEnemyTelegraph>()?.ResolveOfferedCard(card);
+        GameManager.Instance?.RefreshOfferingHUD(); // update live ingredients on staging
 
         burnInProgress = true;
         burningCard = card;
@@ -441,6 +442,7 @@ public class CardOfferingController : MonoBehaviour
 
         RemovePreviewFor(card);
         ReturnCardToHand(card);
+        GameManager.Instance?.RefreshOfferingHUD(); // update live ingredients on undo
         RecenterPreviewVisuals(recenterTweenDuration);
     }
 
@@ -458,6 +460,7 @@ public class CardOfferingController : MonoBehaviour
         if (burningCard == card) { burnInProgress = false; burningCard = null; }
         RemovePreviewFor(card);
         ReturnCardToHand(card);
+        GameManager.Instance?.RefreshOfferingHUD(); // update live ingredients on undo
         RecenterPreviewVisuals(recenterTweenDuration);
     }
 
