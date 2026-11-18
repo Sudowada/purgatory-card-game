@@ -41,7 +41,8 @@ public class ScoreHUD : MonoBehaviour
     private static readonly int[] TierStarts = { 0, 0, 3, 6, 10, 15, 20, 25, 31 };
 
     private TextMeshProUGUI pointsValue;
-    private TextMeshProUGUI combinedMultValue;
+    private TextMeshProUGUI additiveMultValue;
+    private TextMeshProUGUI multiplicativeMultValue;
     private TextMeshProUGUI tierMultValue;
     private TextMeshProUGUI differenceValue;
     private TextMeshProUGUI nextTierHint;
@@ -166,7 +167,8 @@ public class ScoreHUD : MonoBehaviour
         if (!manager.TryGetLiveScorePreview(out ComboResult result))
         {
             pointsValue.text = "—";
-            combinedMultValue.text = "—";
+            additiveMultValue.text = "—";
+            multiplicativeMultValue.text = "—";
             tierMultValue.text = "—";
             tierMultValue.fontSize = 25f;
             differenceValue.text = "DIFF  —";
@@ -179,9 +181,10 @@ public class ScoreHUD : MonoBehaviour
         {
             int tier = result.isPenalty ? 0 : Mathf.Clamp(result.diffDots, 1, 8);
             pointsValue.text = result.points.ToString("N0");
-            combinedMultValue.text = $"×{result.additiveMult * result.multiplicativeMult:0.##}";
+            additiveMultValue.text = $"+{result.additiveMult:0.##}";
+            multiplicativeMultValue.text = $"x{result.multiplicativeMult:0.##}";
             // Negative difference scores a fixed penalty; ×0.25 is not applied.
-            tierMultValue.text = result.isPenalty ? "PENALTY" : $"×{result.tierMult:0.##}";
+            tierMultValue.text = result.isPenalty ? "PENALTY" : $"x{result.tierMult:0.##}";
             tierMultValue.fontSize = result.isPenalty ? 18f : 25f;
             differenceValue.text = result.difference >= 0
                 ? $"DIFF  +{result.difference}" : $"DIFF  {result.difference}";
@@ -189,7 +192,7 @@ public class ScoreHUD : MonoBehaviour
             nextTierHint.text = result.isPenalty
                 ? $"+{Mathf.Abs(result.difference)} TO ESCAPE PENALTY"
                 : result.nextTierAt > 0
-                    ? $"+{result.nextTierAt} DIFFERENCE TO ×{result.nextTierMult:0.##}"
+                    ? $"+{result.nextTierAt} DIFFERENCE TO x{result.nextTierMult:0.##}"
                     : "MAX DIFFERENCE TIER";
 
             activeTierColor = TierColors[tier];
@@ -325,9 +328,12 @@ public class ScoreHUD : MonoBehaviour
         CreateText("Offering Subtitle", panel, new Vector2(18f, -192f),
             new Vector2(404f, 20f), 16f, new Color(0.85f, 0.66f, 0.32f)).text = "OFFER SCORE";
 
+        // Four separate ingredients, so +Mult does not hide rare xMult and
+        // the guaranteed difference xMult remains a readable reward.
         pointsValue = CreateIngredient(panel, "POINTS", 18f);
-        combinedMultValue = CreateIngredient(panel, "MULT", 156f);
-        tierMultValue = CreateIngredient(panel, "TIER MULT", 294f);
+        additiveMultValue = CreateIngredient(panel, "+MULT", 121f);
+        multiplicativeMultValue = CreateIngredient(panel, "xMULT", 224f);
+        tierMultValue = CreateIngredient(panel, "DIFF xMULT", 327f);
 
         differenceValue = CreateText("Difference", panel, new Vector2(18f, -308f),
             new Vector2(404f, 30f), 22f, Color.white);
@@ -355,14 +361,19 @@ public class ScoreHUD : MonoBehaviour
     private static TextMeshProUGUI CreateIngredient(Transform parent, string name, float x)
     {
         RectTransform panel = CreateRect(name + " Panel", parent, new Vector2(x, -221f),
-            new Vector2(126f, 72f));
+            new Vector2(99f, 72f));
         Image background = panel.gameObject.AddComponent<Image>();
         background.color = new Color(0.14f, 0.15f, 0.16f, 1f);
         background.raycastTarget = false;
         CreateText(name + " Label", panel, new Vector2(8f, -8f),
-            new Vector2(110f, 18f), 14f, new Color(0.68f, 0.66f, 0.62f)).text = name;
-        return CreateText(name + " Value", panel, new Vector2(8f, -30f),
-            new Vector2(110f, 34f), 25f, Color.white);
+            new Vector2(85f, 18f), name == "DIFF xMULT" ? 12f : 14f,
+            new Color(0.68f, 0.66f, 0.62f)).text = name;
+        var value = CreateText(name + " Value", panel, new Vector2(8f, -30f),
+            new Vector2(85f, 34f), 23f, Color.white);
+        value.enableAutoSizing = true;
+        value.fontSizeMin = 13f;
+        value.fontSizeMax = 23f;
+        return value;
     }
 
     private static RectTransform CreateRect(string name, Transform parent, Vector2 offset, Vector2 size)
