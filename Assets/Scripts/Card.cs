@@ -16,7 +16,13 @@ public class Card : MonoBehaviour
     public string cardSuit;     // "♠" "♥" "♦" "♣"
 
     /// <summary>Score value — reversed scale. Ace=14pts, King=2pts (formula: 15 - cardValue).</summary>
-    public int PointValue => Mathf.Max(0, 15 - cardValue - pointDamageTaken);
+    // Suit relic points belong to PointValue, not FaceValue: they affect raw
+    // scoring Points, not enemy comparison or combo detection. Including the
+    // bonus here also updates the live PointValue text on 3D cards.
+    public int PointValue => Mathf.Max(0,
+        15 - cardValue + (RelicSystem.Instance != null
+            ? RelicSystem.Instance.GetSuitPointBonus(cardSuit) : 0)
+        - pointDamageTaken);
     [HideInInspector] public int pointDamageTaken;
     public void ApplyPointDamage(int amount) => pointDamageTaken += Mathf.Max(0, amount);
 

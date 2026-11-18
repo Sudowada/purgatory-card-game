@@ -88,6 +88,15 @@ public static class RelicPrefabFactory
         RelicType.Purifier        => PrimitiveType.Sphere,
         RelicType.NecromancyRelic => PrimitiveType.Sphere,
 
+        // Generalist score relics and suit seals — recognizable placeholders
+        RelicType.SpadeSeal   => PrimitiveType.Cube,
+        RelicType.HeartSeal   => PrimitiveType.Sphere,
+        RelicType.DiamondSeal => PrimitiveType.Cube,
+        RelicType.ClubSeal    => PrimitiveType.Cylinder,
+        RelicType.SmallMult   => PrimitiveType.Cylinder,
+        RelicType.MediumMult  => PrimitiveType.Cube,
+        RelicType.LargeMult   => PrimitiveType.Capsule,
+
         // Combo Engines — cylinder variants
         RelicType.PairAddict     => PrimitiveType.Cylinder,
         RelicType.LowCardGenius  => PrimitiveType.Cylinder,
@@ -129,6 +138,13 @@ public static class RelicPrefabFactory
         RelicType.TimeEngine    => PrimitiveType.Sphere,     // gear + orb
         RelicType.RotBurst      => PrimitiveType.Sphere,     // orbiting decay orb
         RelicType.ComboBank     => PrimitiveType.Cube,       // coin stack suggestion
+        RelicType.SpadeSeal     => PrimitiveType.Capsule,    // spade point
+        RelicType.HeartSeal     => PrimitiveType.Sphere,     // paired round mark
+        RelicType.DiamondSeal   => PrimitiveType.Cube,       // raised gem
+        RelicType.ClubSeal      => PrimitiveType.Sphere,     // club head
+        RelicType.SmallMult     => PrimitiveType.Sphere,     // small counter
+        RelicType.MediumMult    => PrimitiveType.Cylinder,   // ledger dial
+        RelicType.LargeMult     => PrimitiveType.Cube,       // large counter
         _ => null
     };
 
@@ -141,6 +157,13 @@ public static class RelicPrefabFactory
         RelicType.TimeEngine      => new Vector3(0.3f, 0.3f, 0f),
         RelicType.RotBurst        => new Vector3(0.4f, 0f,   0f),
         RelicType.ComboBank       => new Vector3(0f,  0.4f,  0f),
+        RelicType.SpadeSeal       => new Vector3(0f,  0.50f, 0f),
+        RelicType.HeartSeal       => new Vector3(0.42f, 0.25f, 0f),
+        RelicType.DiamondSeal     => new Vector3(0f,  0.50f, 0f),
+        RelicType.ClubSeal        => new Vector3(0f,  0.58f, 0f),
+        RelicType.SmallMult       => new Vector3(0f,  0.30f, 0f),
+        RelicType.MediumMult      => new Vector3(0f,  0.55f, 0f),
+        RelicType.LargeMult       => new Vector3(0f,  0.65f, 0f),
         _ => Vector3.zero
     };
 
@@ -153,6 +176,13 @@ public static class RelicPrefabFactory
         RelicType.TimeEngine      => new Vector3(0.35f, 0.35f, 0.35f),
         RelicType.RotBurst        => new Vector3(0.25f, 0.25f, 0.25f),
         RelicType.ComboBank       => new Vector3(0.7f,  0.2f,  0.7f),
+        RelicType.SpadeSeal       => new Vector3(0.35f, 0.60f, 0.35f),
+        RelicType.HeartSeal       => new Vector3(0.60f, 0.60f, 0.60f),
+        RelicType.DiamondSeal     => new Vector3(0.48f, 0.48f, 0.48f),
+        RelicType.ClubSeal        => new Vector3(0.65f, 0.45f, 0.65f),
+        RelicType.SmallMult       => new Vector3(0.40f, 0.23f, 0.40f),
+        RelicType.MediumMult      => new Vector3(0.48f, 0.20f, 0.48f),
+        RelicType.LargeMult       => new Vector3(0.45f, 0.40f, 0.45f),
         _ => Vector3.one * 0.3f
     };
 

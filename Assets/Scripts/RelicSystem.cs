@@ -12,6 +12,9 @@ public enum RelicType
     GlassCannon, DoubleDecay, InstantRot, PlagueAll,
     // Append new IDs so existing Inspector references retain their values.
     LoadedDice, RerollToken, CoinFlip,
+    // Flexible scoring relics: append only to preserve serialized enum IDs.
+    SpadeSeal, HeartSeal, DiamondSeal, ClubSeal,
+    SmallMult, MediumMult, LargeMult,
 }
 public enum RelicRarity { Common, Uncommon, Rare }
 
@@ -60,6 +63,14 @@ public class RelicSystem : MonoBehaviour
             case RelicType.LoadedDice: return RelicRarity.Rare;
             case RelicType.RerollToken: return RelicRarity.Uncommon;
             case RelicType.CoinFlip: return RelicRarity.Common;
+            // Suit-scoring relics are versatile but still reward deckbuilding.
+            case RelicType.SpadeSeal:
+            case RelicType.HeartSeal:
+            case RelicType.DiamondSeal:
+            case RelicType.ClubSeal:
+            case RelicType.MediumMult: return RelicRarity.Uncommon;
+            case RelicType.SmallMult: return RelicRarity.Common;
+            case RelicType.LargeMult: return RelicRarity.Rare;
         }
         // Preserve the old shop's category buckets for legacy relics until
         // individual rarities are assigned during the catalogue overhaul.
@@ -110,6 +121,22 @@ public class RelicSystem : MonoBehaviour
         Recalculate();
     }
     public bool HasRelic(RelicType type) => activeRelics.Exists(r => r.type == type);
+
+    /// <summary>
+    /// Add points only; never alter face value, identity, combos, or difference.
+    /// Called by Card.PointValue, so the on-card value and final Points agree.
+    /// </summary>
+    public int GetSuitPointBonus(string suit)
+    {
+        switch (suit)
+        {
+            case "♠": return HasRelic(RelicType.SpadeSeal) ? 10 : 0;
+            case "♥": return HasRelic(RelicType.HeartSeal) ? 10 : 0;
+            case "♦": return HasRelic(RelicType.DiamondSeal) ? 10 : 0;
+            case "♣": return HasRelic(RelicType.ClubSeal) ? 10 : 0;
+            default: return 0;
+        }
+    }
     private void OnRelicAdded(RelicType type)
     {
         ShopManager.Instance?.OnEconomyRelicAcquired(type);
@@ -253,6 +280,10 @@ public class RelicSystem : MonoBehaviour
         var   cards   = result.scoringCards;
         float addMult = result.additiveMult;
         if (HasRelic(RelicType.LoadedDice)) addMult += LoadedDiceMult;
+        // General-purpose additive Mult: compatible with any combo and suit.
+        if (HasRelic(RelicType.SmallMult)) addMult += 2f;
+        if (HasRelic(RelicType.MediumMult)) addMult += 4f;
+        if (HasRelic(RelicType.LargeMult)) addMult += 6f;
         //   // starts at 1 + comboBonus
         float mulMult = 1f;                    // relic multiplicative stack
         // ── Persistent multiplier ─────────────────────────────────────────────
@@ -341,6 +372,27 @@ public class RelicSystem : MonoBehaviour
         RelicType.CoinFlip => new Relic(type, RelicCategory.RuleChanger,
             "Coin Flip", "50% chance after each completed round (3 encounters) to earn a saved free reroll.",
             "Heads, you get another chance."),
+        RelicType.SpadeSeal => new Relic(type, RelicCategory.ComboEngine,
+            "Spade Seal", "Each Spade card gains +10 Points while this relic is owned.",
+            "Steel remembers every cut."),
+        RelicType.HeartSeal => new Relic(type, RelicCategory.ComboEngine,
+            "Heart Seal", "Each Heart card gains +10 Points while this relic is owned.",
+            "Even sacrifice has a pulse."),
+        RelicType.DiamondSeal => new Relic(type, RelicCategory.ComboEngine,
+            "Diamond Seal", "Each Diamond card gains +10 Points while this relic is owned.",
+            "Harder than the cell walls."),
+        RelicType.ClubSeal => new Relic(type, RelicCategory.ComboEngine,
+            "Club Seal", "Each Club card gains +10 Points while this relic is owned.",
+            "The mark of a survivor."),
+        RelicType.SmallMult => new Relic(type, RelicCategory.ComboEngine,
+            "Cracked Abacus", "Always gain +2 additive Mult.",
+            "A little more than before."),
+        RelicType.MediumMult => new Relic(type, RelicCategory.ComboEngine,
+            "Brass Ledger", "Always gain +4 additive Mult.",
+            "The figures never lie."),
+        RelicType.LargeMult => new Relic(type, RelicCategory.ComboEngine,
+            "Gilded Ledger", "Always gain +6 additive Mult.",
+            "Every debt comes due."),
         RelicType.FourthHand      => new Relic(type, RelicCategory.RuleChanger,       "Fourth Hand",      "Play up to 4 cards per turn.",                                        "More hands, more suffering."),
         RelicType.DuelistsCode    => new Relic(type, RelicCategory.RuleChanger,       "Duelist's Code",   "Play only 1 card — but its score is tripled.",                        "One blow, decisive."),
         RelicType.PerfectGamble   => new Relic(type, RelicCategory.RuleChanger,       "Perfect Gamble",   "Once per round, discard your entire hand and redraw.",                "Burn it all. Start clean."),
