@@ -471,7 +471,7 @@ public class RelicSystem : MonoBehaviour
             "Heads, you get another chance."),
         RelicType.PokerChip => new Relic(type, RelicCategory.RiskChallenge,
             "Poker Chip",
-            "Flip on every offer: HEADS doubles the whole score (even penalties); TAILS sets it to 0. 50% base, +1% per Luck (max 95%).",
+            "Flip on every offer: HEADS doubles the whole score (even penalties); TAILS sets it to 0. 50% base, +2% per Luck (max 95%).",
             "Gamblers always quit before hitting it big"),
         RelicType.SpadeSeal => new Relic(type, RelicCategory.ComboEngine,
             "Spade Seal", "Each Spade card gains +15 Points while this relic is owned.",
