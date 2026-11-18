@@ -68,9 +68,16 @@ public static class ComboEvaluator
         else if (difference <= 30) { tierMult=3.75f; diffDots=7; diffDotStr="*******";  nextTierAt=31-difference; nextTierMult=5.00f; }
         else                       { tierMult=5.00f; diffDots=8; diffDotStr="********"; nextTierAt=-1;            nextTierMult=5.00f; }
  
-        // ── Combo -> additive mult bonus ──────────────────────────────────────
+        // ── Built-in +Mult (available even with no relics) ───────────────────
+        // The strongest detected combo may hide smaller patterns. Reward each
+        // relevant pattern independently instead of relying only on ComboType.
         (ComboType combo, float comboAddBonus, string comboLabel) = DetectCombo(sorted);
         float additiveMult = 1f + comboAddBonus;
+        if (IsPair(sorted)) additiveMult += 2f;
+        if (IsThreeOfAKind(sorted)) additiveMult += 4f; // total +6 with Pair
+        if (HasThreeCardRun(sorted)) additiveMult += 4f;
+        if (sorted.Count >= 3 && sorted.All(c => c.cardSuit == sorted[0].cardSuit))
+            additiveMult += 5f;
  
         // ── Penalty calculation ───────────────────────────────────────────────
         bool isPenalty     = difference < 0;
@@ -150,8 +157,9 @@ public static class ComboEvaluator
     };
  
     // ── Combo Detection ───────────────────────────────────────────────────────
-    // Returns additive mult bonus (added to 1.0 base)
-    // e.g. Pair returns +0.5 -> additiveMult = 1.5
+    // Returns only bonus for advanced combos (Full House, etc.).
+    // Pair +2, Triple +4 more, Run +4, and same-suit +5 are handled
+    // independently above so a stronger combo never hides their triggers.
  
     private static (ComboType, float, string) DetectCombo(List<Card> sorted)
     {
@@ -159,19 +167,23 @@ public static class ComboEvaluator
         if (IsFourOfAKind(sorted))  return (ComboType.FourOfAKind,  2.5f, "Four of a Kind");
         if (IsFullHouse(sorted))    return (ComboType.FullHouse,    2.0f, "Full House");
         if (IsAllRoyals(sorted))    return (ComboType.AllRoyals,    1.5f, "All Royals");
-        if (IsAscendingRun(sorted)) return (ComboType.AscendingRun, 1.0f, "Run");
-        if (IsThreeOfAKind(sorted)) return GetThreeOfAKindBonus(sorted);
+        if (IsAscendingRun(sorted)) return (ComboType.AscendingRun, 0.0f, "Run");
+        if (IsThreeOfAKind(sorted)) return (ComboType.ThreeOfAKind, 0.0f, "Three of a Kind");
         if (IsTwoPair(sorted))      return (ComboType.TwoPair,      0.8f, "Two Pair");
-        if (IsPair(sorted))         return (ComboType.Pair,         0.5f, "Pair");
+        if (IsPair(sorted))         return (ComboType.Pair,         0.0f, "Pair");
         return                             (ComboType.HighCard,     0.0f, "High Card");
     }
  
-    private static (ComboType, float, string) GetThreeOfAKindBonus(List<Card> sorted)
+    /// <summary>Any three distinct consecutive ranks, including sequences
+    /// within larger offers and J-Q-K. Ace is low only.</summary>
+    private static bool HasThreeCardRun(List<Card> cards)
     {
-        int v = sorted.GroupBy(c => c.cardValue).First(g => g.Count() >= 3).Key;
-        return v < LOW_CARD_THRESHOLD
-            ? (ComboType.ThreeOfAKind, 1.8f, $"Three {v}s (High Risk)")
-            : (ComboType.ThreeOfAKind, 1.2f, "Three of a Kind");
+        if (cards.Count < 3) return false;
+        var ranks = cards.Select(c => c.cardValue).Distinct().OrderBy(v => v).ToList();
+        for (int i = 2; i < ranks.Count; i++)
+            if (ranks[i] == ranks[i - 1] + 1 && ranks[i - 1] == ranks[i - 2] + 1)
+                return true;
+        return false;
     }
  
     // ── Combo Checks ──────────────────────────────────────────────────────────
