@@ -43,7 +43,14 @@ public class ShopManager : MonoBehaviour
     [Header("Gold")]
     public int   playerGold        = 0;
     public float rareChanceModifier = 0f;
+    [Header("Luck")]
+    [Min(0)] [Tooltip("Each Luck point adds +1 percentage point to Poker Chip's win chance (50% base, 95% cap).")]
+    public int luck = 0;
+    public float PokerChipWinChance => Mathf.Clamp(0.5f + Mathf.Max(0, luck) * 0.01f, 0.5f, 0.95f);
     public List<string> collectibles   = new List<string>();
+    private const string CollectibleSaveKey = "Purgatory.Collectibles.v1";
+    public const string SlotMachineCollectible = "collectible_slot_machine";
+    public const string PokerChipCollectible = "collectible_poker_chip";
     public int          bonusStartGold = 0;
     public int baseGoldPerRound = 3;
     public int burnCost         = 4;
@@ -164,6 +171,11 @@ public class ShopManager : MonoBehaviour
         if (Instance == null) Instance = this;
         else { Destroy(gameObject); return; }
         InitializeDeckPool();
+        // Persist secret discoveries across runs and game sessions, while
+        // retaining any collectibles assigned directly in the Inspector.
+        foreach (string id in PlayerPrefs.GetString(CollectibleSaveKey, "").Split('|'))
+            if (!string.IsNullOrEmpty(id) && !collectibles.Contains(id))
+                collectibles.Add(id);
     }
     // ── Deck Pool ─────────────────────────────────────────────────────────────
     private void InitializeDeckPool()
@@ -252,13 +264,34 @@ public class ShopManager : MonoBehaviour
     public void RemoveGold(int amount) => playerGold = Mathf.Max(0, playerGold - amount);
     public void AddCollectible(string id)
     {
-        if (!collectibles.Contains(id))
-        {
-            collectibles.Add(id);
-            CollectiblesTable.Instance?.Refresh();
-        }
+        if (string.IsNullOrEmpty(id) || collectibles.Contains(id)) return;
+        collectibles.Add(id);
+        PlayerPrefs.SetString(CollectibleSaveKey, string.Join("|", collectibles));
+        PlayerPrefs.Save();
+        CollectiblesTable.Instance?.Refresh();
     }
-    public bool HasCollectible(string id) => collectibles.Contains(id);
+    public bool HasCollectible(string id) => !string.IsNullOrEmpty(id) && collectibles.Contains(id);
+
+    /// <summary>Slot machine: double your wager on a fair coin flip, or lose it.
+    /// A win gains an additional wager amount; a loss removes the wager.
+    /// This does not alter Poker Chip luck odds.</summary>
+    public bool TryGambleGold(int wager, out bool won, out string outcome)
+    {
+        won = false;
+        if (!HasCollectible(SlotMachineCollectible))
+        { outcome = "Find three sevens to unlock the slot machine."; return false; }
+        if (wager <= 0 || wager > playerGold)
+        { outcome = "Choose a wager you can afford."; return false; }
+        won = Random.value < 0.5f;
+        // Work with long to avoid an overflow if large playtest gold values
+        // are involved. Never produce negative balances or overflowing ints.
+        if (won)
+            playerGold = (int)System.Math.Min(int.MaxValue, (long)playerGold + wager);
+        else
+            playerGold -= wager;
+        outcome = won ? $"HEADS! Won +{wager} gold." : $"TAILS. Lost {wager} gold.";
+        return true;
+    }
     // ── Old Shop Generation (UI panel shop) ───────────────────────────────────
     public void GenerateShop(int roundNumber)
     {
@@ -297,6 +330,8 @@ public class ShopManager : MonoBehaviour
               && RelicSystem.Instance != null && RelicSystem.Instance.activeRelics.Count >= 2),
         (RelicType.PlagueAll,        "Survive 7 rounds",
             _ => RunStats.Instance != null && RunStats.Instance.RoundsSurvived >= 7),
+        (RelicType.PokerChip,        "Discover a Poker Chip by playing three fully rotten sevens",
+            _ => Instance != null && Instance.HasCollectible(PokerChipCollectible)),
     };
     public static bool IsRelicUnlocked(RelicType type, int round)
     {
@@ -321,6 +356,7 @@ public class ShopManager : MonoBehaviour
             allTypes = new List<RelicType>((RelicType[])System.Enum.GetValues(typeof(RelicType)));
             if (RelicSystem.Instance != null)
                 allTypes.RemoveAll(t => RelicSystem.Instance.HasRelic(t));
+            allTypes.RemoveAll(t => t == RelicType.PokerChip && !IsRelicUnlocked(t, round));
         }
         if (allTypes.Count == 0) return null;
         RelicType picked;
@@ -372,6 +408,9 @@ public class ShopManager : MonoBehaviour
     public bool TryBuyRelic(Relic relic, int cost, out string reason)
     {
         if (relic == null) { reason = "Sold out."; return false; }
+        if (!IsRelicUnlocked(relic.type, GameManager.Instance != null
+            ? GameManager.Instance.CurrentRoundNumber : 1))
+        { reason = GetUnlockRequirement(relic.type) ?? "Relic locked."; return false; }
         var system = RelicSystem.Instance;
         if (system == null) { reason = "Relic system unavailable."; return false; }
         if (system.HasRelic(relic.type)) { reason = "Already owned."; return false; }
@@ -455,7 +494,12 @@ public class ShopManager : MonoBehaviour
             : roll < rareWeight + commonWeight ? RelicRarity.Common : RelicRarity.Uncommon;
         var available = new List<RelicType>();
         foreach (RelicType type in System.Enum.GetValues(typeof(RelicType)))
-            if (!exclude.Contains(type)) available.Add(type);
+        {
+            if (exclude.Contains(type)) continue;
+            if (type == RelicType.PokerChip && !IsRelicUnlocked(type, stage))
+                continue;
+            available.Add(type);
+        }
         if (available.Count == 0) return null;
         var candidates = available.Where(type => RelicSystem.GetRarity(type) == target).ToList();
         if (candidates.Count == 0) candidates = available;
