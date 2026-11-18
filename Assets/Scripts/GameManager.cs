@@ -21,11 +21,12 @@ public class GameManager : MonoBehaviour
     [Header("Threshold Scaling")]
     [SerializeField] private int baseThreshold     = 250;
     [SerializeField] private int thresholdPerRound = 50;
-    [Header("Eight Round Run")]
-    [SerializeField, Min(1)] private int playableRounds = 8;
+    [Header("Playable Rounds")]
+    [Tooltip("12-round score-balancing playtest. Renamed from playableRounds so older scene overrides of 8 do not mask the new default.")]
+    [SerializeField, Min(1)] private int playtestPlayableRounds = 12;
     [SerializeField, Min(1f)] private float scoreGrowthPerRound = 1.4f;
     private bool runFinished, runWon, endScreenDismissed;
-    public int PlayableRounds => Mathf.Max(1, playableRounds);
+    public int PlayableRounds => Mathf.Max(1, playtestPlayableRounds);
     public bool RunFinished => runFinished;
     public bool RunWon => runWon;
     public int GetRoundTarget(int round)
@@ -37,10 +38,10 @@ public class GameManager : MonoBehaviour
             : Mathf.Max(1, baseThreshold) + index * Mathf.Max(0, thresholdPerRound);
         return Mathf.Max(1, Mathf.RoundToInt(target / 10f) * 10);
     }
-    [ContextMenu("Apply Eight Round Playtest Defaults")]
+    [ContextMenu("Apply Twelve Round Playtest Defaults")]
     private void ApplyEightRoundPlaytestDefaults()
     {
-        playableRounds = 8; baseThreshold = 250; scoreGrowthPerRound = 1.4f;
+        playtestPlayableRounds = 12; baseThreshold = 250; scoreGrowthPerRound = 1.4f;
         for (int round = 1; round <= PlayableRounds; round++)
             Debug.Log($"[Run] Round {round}/{PlayableRounds}: target {GetRoundTarget(round)}");
     }
@@ -179,6 +180,32 @@ public class GameManager : MonoBehaviour
     {
         return ShouldRefillOffering && TryAssignNextCard(slot);
     }
+    /// <summary>
+    /// Returns live score ingredients from 3D altar staging or 2D card selection.
+    /// Preview relic modifiers must not consume one-shot bonuses.
+    /// </summary>
+    public bool TryGetLiveScorePreview(out ComboResult preview)
+    {
+        preview = default;
+        if (!handInitialized || !roundStarted || runFinished || inShop || isAnimating)
+            return false;
+
+        List<Card> choices = null;
+        if (cachedOfferingController != null && cachedOfferingController.OfferedCount > 0)
+            choices = cachedOfferingController.BuildPlayedCardsInPreviewOrder();
+        else if (selectedCards.Count > 0)
+            choices = selectedCards;
+
+        if (choices == null || choices.Count == 0)
+            return false;
+
+        int minimumBase = RelicSystem.Instance != null
+            ? RelicSystem.Instance.GetMinimumBase() : 0;
+        preview = ComboEvaluator.Evaluate(choices, currentEnemyCard, minimumBase, stageNumber);
+        RelicSystem.Instance?.ApplyRelicModifiers(preview, false);
+        return true;
+    }
+
     public void RefreshOfferingHUD()
     {
         RegisterCardEvents();
@@ -216,6 +243,7 @@ public class GameManager : MonoBehaviour
         if (GetComponent<RoundSelectScreen>() == null) gameObject.AddComponent<RoundSelectScreen>();
     }
     private RandomEnemyTelegraph enemyTelegraph;
+    private CardOfferingController cachedOfferingController;
     void Start()
     {
         Debug.Log("[HandFlow] GameManager Start — preparing hand initialization.");
@@ -241,6 +269,7 @@ public class GameManager : MonoBehaviour
             yield break;
         }
         var offeringController = FindFirstObjectByType<CardOfferingController>();
+        cachedOfferingController = offeringController;
         GameObject telegraphOwner = offeringController != null ? offeringController.gameObject : gameObject;
         enemyTelegraph = telegraphOwner.GetComponent<RandomEnemyTelegraph>();
         if (enemyTelegraph == null) enemyTelegraph = telegraphOwner.AddComponent<RandomEnemyTelegraph>();
@@ -415,36 +444,26 @@ public class GameManager : MonoBehaviour
         var finalTMP     = FindTMP("PreviewFinal");
         var tierTMP      = FindTMP("PreviewTier");
         var nextHintTMP  = FindTMP("PreviewNextHint");
-        if (selectedCards.Count == 0)
+        if (!TryGetLiveScorePreview(out ComboResult result))
         {
             if (comboNameTMP != null) comboNameTMP.text = "Select cards";
             if (chipsTMP     != null) chipsTMP.text     = "—";
             if (multTMP      != null) multTMP.text      = "—";
-            if (finalTMP     != null) { finalTMP.text   = "—"; finalTMP.color = new Color(0.25f,0.92f,0.42f,1f); }
+            if (finalTMP     != null) { finalTMP.text = ""; finalTMP.enabled = false; }
             ClearBreakdown();
             TierBarController.Instance?.SetTier(0, 0f, "");
             return;
         }
-        int minimumBase = RelicSystem.Instance != null ? RelicSystem.Instance.GetMinimumBase() : 0;
-        var result = ComboEvaluator.Evaluate(selectedCards, currentEnemyCard, minimumBase, stageNumber);
         if (comboNameTMP != null) comboNameTMP.text = result.comboName ?? "High Card";
         if (chipsTMP != null)
             StartCoroutine(FlickerNumber(chipsTMP, result.points, 0.18f));
         if (multTMP != null)
         {
-            float displayMult = result.CombinedMultiplier;
+            float displayMult = result.additiveMult * result.multiplicativeMult;
             StartCoroutine(FlickerText(multTMP, $"{displayMult:0.##}x", 0.12f));
         }
-        if (finalTMP != null)
-        {
-            Color targetCol = result.isPenalty
-                ? new Color(0.92f, 0.25f, 0.25f, 1f)
-                : result.containsDecayedCard
-                    ? new Color(0.90f, 0.45f, 0.20f, 1f)
-                    : new Color(0.25f, 0.92f, 0.42f, 1f);
-            finalTMP.color = targetCol;
-            StartCoroutine(FlickerNumber(finalTMP, result.finalScore, 0.22f));
-        }
+        // Do not reveal the final projected score before OFFER.
+        if (finalTMP != null) { finalTMP.text = ""; finalTMP.enabled = false; }
         // ── Tier bar ─────────────────────────────────────────────────────────
         int tierIndex = result.isPenalty ? 0 : Mathf.Clamp(result.diffDots, 0, 8);
         float fillFraction = 0f;
@@ -453,7 +472,16 @@ public class GameManager : MonoBehaviour
             if (result.nextTierAt == -1)
                 fillFraction = 1f; // max tier
             else if (result.nextTierAt > 0)
-                fillFraction = Mathf.Clamp01(1f - (float)result.nextTierAt / 6f);
+            {
+                int tierStart = tierIndex switch
+                {
+                    1 => 0, 2 => 3, 3 => 6, 4 => 10,
+                    5 => 15, 6 => 20, 7 => 25, _ => 31
+                };
+                int nextAt = result.difference + result.nextTierAt;
+                fillFraction = Mathf.Clamp01(
+                    (float)(result.difference - tierStart) / Mathf.Max(1, nextAt - tierStart));
+            }
         }
         string nextHint = result.isPenalty
             ? $"+{Mathf.Abs(result.difference)} to escape"
@@ -518,6 +546,7 @@ public class GameManager : MonoBehaviour
         var chipsTMP = FindTMP("PreviewBase");
         var multTMP  = FindTMP("PreviewMult");
         var finalTMP = FindTMP("PreviewFinal");
+        if (finalTMP != null) finalTMP.enabled = true; // reveal only when offering resolves
         var comboTMP = FindTMP("ComboText");
         if (comboTMP != null)
             comboTMP.text = result.comboName ?? "High Card";
@@ -535,7 +564,7 @@ public class GameManager : MonoBehaviour
         yield return new WaitForSeconds(0.08f);
         if (multTMP != null)
         {
-            float displayMult = result.CombinedMultiplier;
+            float displayMult = result.additiveMult * result.multiplicativeMult;
             multTMP.text = $"{displayMult:0.##}x";
             var multGO = GameObject.Find("MultPill");
             if (multGO != null)
