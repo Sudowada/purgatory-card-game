@@ -105,7 +105,7 @@ public static class ComboEvaluator
             : nextTierAt == -1 ? " [MAX]" : "";
         string desc = isPenalty
             ? $"{comboLabel} | PENALTY diff:{difference} | -{penaltyAmount}"
-            : $"{comboLabel} | diff:+{difference}{diffDotStr} | {points} x {additiveMult:0.##} x {tierMult:0.##} = {finalScore}{decayNote}{nextHint}";
+            : $"{comboLabel} | diff:+{difference}{diffDotStr} | {points} POINTS · +{additiveMult:0.##} +MULT · x{tierMult:0.##} DIFF xMULT{decayNote}{nextHint}";
  
         return new ComboResult
         {

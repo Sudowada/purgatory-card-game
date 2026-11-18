@@ -538,8 +538,8 @@ public class GameManager : MonoBehaviour
             StartCoroutine(FlickerNumber(chipsTMP, result.points, 0.18f));
         if (multTMP != null)
         {
-            float displayMult = result.additiveMult * result.multiplicativeMult;
-            StartCoroutine(FlickerText(multTMP, $"{displayMult:0.##}x", 0.12f));
+            StartCoroutine(FlickerText(multTMP,
+                $"+{result.additiveMult:0.##} / x{result.multiplicativeMult:0.##}", 0.12f));
         }
         // Do not reveal the final projected score before OFFER.
         if (finalTMP != null) { finalTMP.text = ""; finalTMP.enabled = false; }
@@ -565,7 +565,7 @@ public class GameManager : MonoBehaviour
         string nextHint = result.isPenalty
             ? $"+{Mathf.Abs(result.difference)} to escape"
             : result.nextTierAt > 0
-                ? $"+{result.nextTierAt} → ×{result.nextTierMult:0.##}"
+                ? $"+{result.nextTierAt} → x{result.nextTierMult:0.##}"
                 : "MAX TIER";
         TierBarController.Instance?.SetTier(tierIndex, fillFraction, nextHint);
         // Keep tierTMP in sync for fallback
@@ -578,18 +578,10 @@ public class GameManager : MonoBehaviour
         SetBreakdownRow(0,
             $"Base points ({result.comboName})",
             $"{result.points} pts");
-        // Row 1: Additive mult source
-        if (result.additiveMult > 1f)
-        {
-            float comboBonus = result.additiveMult - 1f;
-            SetBreakdownRow(1,
-                $"{result.comboName} combo",
-                $"+{comboBonus:0.##} add mult");
-        }
-        else
-        {
-            SetBreakdownRow(1, "No combo bonus", "×1.0");
-        }
+        // Row 1: Never combine additive +Mult and relic xMult into a
+        // misleading single multiplier (the main ScoreHUD gives each a tile).
+        SetBreakdownRow(1, "+Mult / relic xMult",
+            $"+{result.additiveMult:0.##} / x{result.multiplicativeMult:0.##}");
         // Row 2: Tier mult source
         if (result.isPenalty)
         {
@@ -601,7 +593,7 @@ public class GameManager : MonoBehaviour
         {
             SetBreakdownRow(2,
                 $"Tier {tierIndex} (diff +{result.difference})",
-                $"×{result.tierMult:0.##} tier");
+                $"x{result.tierMult:0.##} difference xMult");
         }
     }
     static (int nextAt, float nextMult) NextTier(int diff)
@@ -643,8 +635,7 @@ public class GameManager : MonoBehaviour
         yield return new WaitForSeconds(0.08f);
         if (multTMP != null)
         {
-            float displayMult = result.additiveMult * result.multiplicativeMult;
-            multTMP.text = $"{displayMult:0.##}x";
+            multTMP.text = $"+{result.additiveMult:0.##} / x{result.multiplicativeMult:0.##}";
             var multGO = GameObject.Find("MultPill");
             if (multGO != null)
                 multGO.transform.DOPunchScale(Vector3.one * 0.12f, 0.25f, 5, 0.5f);
@@ -823,7 +814,12 @@ public class GameManager : MonoBehaviour
         currentThreshold = GetRoundTarget(roundNumber);
         int minVal       = enemyBaseMin + (roundNumber - 1) * enemyScalePerRound;
         int maxVal       = enemyBaseMax + (roundNumber - 1) * enemyScalePerRound;
-        currentEnemyCard = Random.Range(minVal, maxVal + 1);
+        // Glass Cannon's xMult must come with its promised risk. Apply when
+        // rolling the next enemy card so both preview and actual score see
+        // the same doubled value for the entire encounter.
+        int rolledEnemy = Random.Range(minVal, maxVal + 1);
+        currentEnemyCard = RelicSystem.Instance != null
+            ? RelicSystem.Instance.ModifyEnemyValue(rolledEnemy) : rolledEnemy;
         currentDeck = ShopManager.Instance != null
             ? ShopManager.Instance.GetShuffledDeck()
             : BuildDefaultDeck();

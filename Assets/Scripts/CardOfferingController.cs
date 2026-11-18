@@ -294,10 +294,22 @@ public class CardOfferingController : MonoBehaviour
     public event Action<IReadOnlyList<Card>> OfferingConfirmed;
 
     public int OfferedCount => offeredCards.Count;
-    public int MaximumCardsToOffer =>
-        maximumCardsOverride > 0
-            ? maximumCardsOverride
-            : Mathf.Max(1, baseMaximumCardsToOffer);
+    public int MaximumCardsToOffer
+    {
+        get
+        {
+            int limit = maximumCardsOverride > 0
+                ? maximumCardsOverride : Mathf.Max(1, baseMaximumCardsToOffer);
+            var relics = RelicSystem.Instance;
+            // Duelist's Code x3 must require an actual one-card offer.
+            // Fourth Hand expands the 3D altar to four otherwise.
+            if (relics != null && relics.HasRelic(RelicType.DuelistsCode))
+                return 1;
+            if (relics != null && relics.HasRelic(RelicType.FourthHand))
+                limit = Mathf.Max(limit, 4);
+            return limit;
+        }
+    }
 
     public bool IsFull => offeredCards.Count >= MaximumCardsToOffer;
     public bool CanConfirm =>
@@ -306,7 +318,7 @@ public class CardOfferingController : MonoBehaviour
         GameManager.Instance != null &&
         GameManager.Instance.CanPlayOffering &&
         deckDrawPoint != null &&
-        offeredCards.Count >= Mathf.Max(1, minimumCardsToConfirm) &&
+        offeredCards.Count >= Mathf.Min(MaximumCardsToOffer, Mathf.Max(1, minimumCardsToConfirm)) &&
         offeredCards.Count <= MaximumCardsToOffer &&
         previewEntries.Count == offeredCards.Count;
 
