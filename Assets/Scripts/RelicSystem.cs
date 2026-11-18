@@ -229,7 +229,7 @@ public class RelicSystem : MonoBehaviour
     // ─────────────────────────────────────────────────────────────────────────
     // SCORE MODIFIERS — NEW Points × AdditiveMult × MultiplicativeMult × TierMult
     // ─────────────────────────────────────────────────────────────────────────
-    public int ApplyRelicModifiers(ComboResult result)
+    public int ApplyRelicModifiers(ComboResult result, bool consumeOneShotEffects = true)
     {
         // Penalty hands — relics don't reduce penalty except GlassCannon doubles it
         if (result.isPenalty)
@@ -287,7 +287,7 @@ public class RelicSystem : MonoBehaviour
         if (HasRelic(RelicType.GoldenCard) && _goldenCardInPlay)
         {
             mulMult *= 10f;
-            _goldenCardInPlay = false;
+            if (consumeOneShotEffects) _goldenCardInPlay = false;
         }
         // ── Store back for HUD display ────────────────────────────────────────
         result.additiveMult       = addMult;
