@@ -105,10 +105,6 @@ public static class RelicPrefabFactory
         RelicType.RoyalCourt    => PrimitiveType.Capsule,
         RelicType.SmallChange   => PrimitiveType.Cylinder,
         RelicType.AceInTheHole  => PrimitiveType.Cube,
-        RelicType.BrokenRuler   => PrimitiveType.Cube,
-        RelicType.TwinTeeth     => PrimitiveType.Cylinder,
-        RelicType.ThreeKnocks   => PrimitiveType.Sphere,
-        RelicType.UniformThread => PrimitiveType.Cylinder,
 
         // Combo Engines — cylinder variants
         RelicType.PairAddict     => PrimitiveType.Cylinder,
@@ -165,10 +161,6 @@ public static class RelicPrefabFactory
         RelicType.RoyalCourt    => PrimitiveType.Cube,       // crown block
         RelicType.SmallChange   => PrimitiveType.Cylinder,   // coin stack
         RelicType.AceInTheHole  => PrimitiveType.Sphere,     // hidden pip
-        RelicType.BrokenRuler   => PrimitiveType.Cube,       // snapped ruler
-        RelicType.TwinTeeth     => PrimitiveType.Capsule,    // second tooth
-        RelicType.ThreeKnocks   => PrimitiveType.Sphere,     // knocker
-        RelicType.UniformThread => PrimitiveType.Capsule,    // seam
         _ => null
     };
 
@@ -195,10 +187,6 @@ public static class RelicPrefabFactory
         RelicType.RoyalCourt      => new Vector3(0f,  0.60f, 0f),
         RelicType.SmallChange     => new Vector3(0f,  0.50f, 0f),
         RelicType.AceInTheHole    => new Vector3(0f,  0.48f, 0f),
-        RelicType.BrokenRuler     => new Vector3(0.45f, 0.30f, 0f),
-        RelicType.TwinTeeth       => new Vector3(0.44f, 0.25f, 0f),
-        RelicType.ThreeKnocks     => new Vector3(0f,  0.60f, 0f),
-        RelicType.UniformThread   => new Vector3(0f,  0.53f, 0f),
         _ => Vector3.zero
     };
 
@@ -225,10 +213,6 @@ public static class RelicPrefabFactory
         RelicType.RoyalCourt      => new Vector3(0.57f, 0.20f, 0.57f),
         RelicType.SmallChange     => new Vector3(0.65f, 0.16f, 0.65f),
         RelicType.AceInTheHole    => new Vector3(0.45f, 0.45f, 0.45f),
-        RelicType.BrokenRuler     => new Vector3(1.00f, 0.20f, 0.20f),
-        RelicType.TwinTeeth       => new Vector3(0.34f, 0.63f, 0.34f),
-        RelicType.ThreeKnocks     => new Vector3(0.35f, 0.35f, 0.35f),
-        RelicType.UniformThread   => new Vector3(0.28f, 0.60f, 0.28f),
         _ => Vector3.one * 0.3f
     };
 
