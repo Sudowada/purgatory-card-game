@@ -409,6 +409,7 @@ public class CardOfferingController : MonoBehaviour
 
         originalHandIndices[card] = handIndex;
         offeredCards.Add(card);
+        GameManager.Instance?.RemoveDiscardMark(card.SourceCard);
         card.SetOfferingController(this);
         GetComponent<RandomEnemyTelegraph>()?.ResolveOfferedCard(card);
         GameManager.Instance?.RefreshOfferingHUD(); // live preview upon staging
