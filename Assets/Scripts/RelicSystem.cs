@@ -160,13 +160,23 @@ public class RelicSystem : MonoBehaviour
             _comboBankBonus += unusedCount * 0.1f;
         }
     }
+    /// <summary>
+    /// Award the Lone Wolf stack once for a committed single-card play.
+    /// Called after score calculation so this stack affects subsequent hands.
+    /// Kept separate from OnHandPlayed until the other scaling relic hooks are
+    /// intentionally connected; don't activate unrelated relic effects here.
+    /// </summary>
+    public void OnSingleCardPlayed(int cardCount)
+    {
+        if (cardCount != 1 || !HasRelic(RelicType.LoneWolf)) return;
+        GainMult(RelicType.LoneWolf, 0.2f);
+    }
+
     public void OnHandPlayed(ComboResult result, bool playerWon)
     {
         _turnsSurvived++;
         if (HasRelic(RelicType.TurnInvestor))
             GainMult(RelicType.TurnInvestor, 0.05f);
-        if (HasRelic(RelicType.LoneWolf) && result.scoringCards?.Count == 1)
-            GainMult(RelicType.LoneWolf, 0.1f);
         if (HasRelic(RelicType.HighValueInvest) && result.scoringCards != null)
             foreach (var c in result.scoringCards)
                 if (c.cardValue >= 10) GainMult(RelicType.HighValueInvest, 0.05f);
@@ -349,7 +359,7 @@ public class RelicSystem : MonoBehaviour
         RelicType.OddCollector    => new Relic(type, RelicCategory.ComboEngine,       "Odd Collector",    "Each odd-valued card adds +20% to additive mult.",                    "The odd ones hold the power."),
         RelicType.EvenMaster      => new Relic(type, RelicCategory.ComboEngine,       "Even Master",      "Each even-valued card adds +20% to additive mult.",                   "Balance is strength."),
         RelicType.ComboBank       => new Relic(type, RelicCategory.ComboEngine,       "Combo Bank",       "Each unused combo type adds ×10% multiplicative per round.",          "Patience compounds interest."),
-        RelicType.LoneWolf        => new Relic(type, RelicCategory.ScalingMultiplier, "Lone Wolf",        "Playing a single card permanently increases persistent mult by +10%.", "Alone, unbowed."),
+        RelicType.LoneWolf        => new Relic(type, RelicCategory.ScalingMultiplier, "Lone Wolf",        "Each single-card play permanently adds +0.2 multiplicative Mult. No cap.", "Alone, unbowed."),
         RelicType.TurnInvestor    => new Relic(type, RelicCategory.ScalingMultiplier, "Turn Investor",    "Each turn survived adds +5% to persistent mult.",                     "Every breath is compounding interest."),
         RelicType.GrindCore       => new Relic(type, RelicCategory.ScalingMultiplier, "Grind Core",       "Win streaks add +10% persistent mult per consecutive win.",            "Momentum is everything."),
         RelicType.PerfectHand     => new Relic(type, RelicCategory.ScalingMultiplier, "Perfect Hand",     "No decayed cards played this hand = +10 flat score.",                 "Purity has its rewards."),
