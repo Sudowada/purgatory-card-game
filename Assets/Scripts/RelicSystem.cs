@@ -15,6 +15,10 @@ public enum RelicType
     // Flexible scoring relics: append only to preserve serialized enum IDs.
     SpadeSeal, HeartSeal, DiamondSeal, ClubSeal,
     SmallMult, MediumMult, LargeMult,
+    // Rank, parity and combo relics: append to preserve saved enum values.
+    MarkedNumbers, FourthBell,
+    OddEtchings, EvenEtchings, RoyalCourt, SmallChange, AceInTheHole,
+    BrokenRuler, TwinTeeth, ThreeKnocks, UniformThread,
 }
 public enum RelicRarity { Common, Uncommon, Rare }
 
@@ -85,6 +89,19 @@ public class RelicSystem : MonoBehaviour
             case RelicType.MediumMult: return RelicRarity.Uncommon;
             case RelicType.SmallMult: return RelicRarity.Common;
             case RelicType.LargeMult: return RelicRarity.Rare;
+            // Simple parity and pair triggers are broadly usable.
+            case RelicType.OddEtchings:
+            case RelicType.EvenEtchings:
+            case RelicType.TwinTeeth: return RelicRarity.Common;
+            // More focused rank and combo tools.
+            case RelicType.MarkedNumbers:
+            case RelicType.FourthBell:
+            case RelicType.RoyalCourt:
+            case RelicType.SmallChange:
+            case RelicType.BrokenRuler:
+            case RelicType.ThreeKnocks:
+            case RelicType.UniformThread: return RelicRarity.Uncommon;
+            case RelicType.AceInTheHole: return RelicRarity.Rare;
         }
         // Preserve the old shop's category buckets for legacy relics until
         // individual rarities are assigned during the catalogue overhaul.
@@ -151,6 +168,34 @@ public class RelicSystem : MonoBehaviour
             default: return 0;
         }
     }
+    /// <summary>
+    /// Point relics stack per card, using card identity (A=1, J=11, Q=12, K=13).
+    /// Only changes raw Points; never alters face-value differences or combos.
+    /// </summary>
+    public int GetRankPointBonus(int rank)
+    {
+        if (rank < 1 || rank > 13) return 0;
+        int bonus = 0;
+        if ((rank & 1) == 1 && HasRelic(RelicType.OddEtchings)) bonus += 4;
+        if ((rank & 1) == 0 && HasRelic(RelicType.EvenEtchings)) bonus += 4;
+        if (rank >= 11 && HasRelic(RelicType.RoyalCourt)) bonus += 8;
+        if (rank >= 2 && rank <= 4 && HasRelic(RelicType.SmallChange)) bonus += 6;
+        if (rank == 1 && HasRelic(RelicType.AceInTheHole)) bonus += 20;
+        return bonus;
+    }
+
+    // A qualifying run is any three distinct consecutive ranks in the offer;
+    // 2-3-4 and J-Q-K qualify. An Ace is low only (A-2-3 qualifies).
+    private static bool HasThreeCardRun(List<Card> cards)
+    {
+        if (cards == null || cards.Count < 3) return false;
+        var ranks = cards.Select(c => c.cardValue).Distinct().OrderBy(v => v).ToList();
+        for (int i = 2; i < ranks.Count; i++)
+            if (ranks[i] == ranks[i - 1] + 1 && ranks[i - 1] == ranks[i - 2] + 1)
+                return true;
+        return false;
+    }
+
     private void OnRelicAdded(RelicType type)
     {
         ShopManager.Instance?.OnEconomyRelicAcquired(type);
@@ -296,6 +341,34 @@ public class RelicSystem : MonoBehaviour
         if (HasRelic(RelicType.SmallMult)) addMult += 3f;
         if (HasRelic(RelicType.MediumMult)) addMult += 6f;
         if (HasRelic(RelicType.LargeMult)) addMult += 9f;
+        // All of these are additive, per-card (not once per offer).
+        if (cards != null)
+        {
+            if (HasRelic(RelicType.OddCollector))
+                addMult += cards.Count(c => (c.cardValue & 1) == 1) * 2f;
+            if (HasRelic(RelicType.EvenMaster))
+                addMult += cards.Count(c => (c.cardValue & 1) == 0) * 2f;
+            if (HasRelic(RelicType.MarkedNumbers))
+                addMult += cards.Count(c => c.cardValue == 1 || c.cardValue == 4 ||
+                                            c.cardValue == 7 || c.cardValue == 9) * 3f;
+            if (HasRelic(RelicType.FourthBell))
+                addMult += cards.Count(c => c.cardValue == 4) * 4f;
+
+            // Pattern bonuses trigger once per offer. They are independent of
+            // primary ComboType so a triple can also trigger the pair relic,
+            // and J-Q-K qualifies as a run even if called "All Royals".
+            if (HasRelic(RelicType.BrokenRuler) && HasThreeCardRun(cards))
+                addMult += 4f;
+            if (HasRelic(RelicType.TwinTeeth) &&
+                cards.GroupBy(c => c.cardValue).Any(g => g.Count() >= 2))
+                addMult += 2f;
+            if (HasRelic(RelicType.ThreeKnocks) &&
+                cards.GroupBy(c => c.cardValue).Any(g => g.Count() >= 3))
+                addMult += 5f;
+            if (HasRelic(RelicType.UniformThread) && cards.Count >= 3 &&
+                cards.All(c => c.cardSuit == cards[0].cardSuit))
+                addMult += 6f;
+        }
         // Turn Investor: dynamic +Mult from gold HELD, not spent or earned
         // lifetime gold. Uncapped, recalculated for both preview and scoring.
         if (HasRelic(RelicType.TurnInvestor) && ShopManager.Instance != null)
@@ -330,12 +403,6 @@ public class RelicSystem : MonoBehaviour
         if (HasRelic(RelicType.LowCardGenius) && cards != null)
             if (cards.All(c => c.cardValue <= 4))
                 addMult *= 2f;
-        // ── OddCollector: +20% additive per odd card ──────────────────────────
-        if (HasRelic(RelicType.OddCollector) && cards != null)
-            addMult += cards.Count(c => c.cardValue % 2 != 0) * 0.2f;
-        // ── EvenMaster: +20% additive per even card ───────────────────────────
-        if (HasRelic(RelicType.EvenMaster) && cards != null)
-            addMult += cards.Count(c => c.cardValue % 2 == 0) * 0.2f;
         // ── PerfectHand: no decayed cards → +10 flat after formula ───────────
         int flatBonus = 0;
         if (HasRelic(RelicType.PerfectHand) && cards != null && !cards.Any(c => c.isDecayed))
@@ -415,6 +482,39 @@ public class RelicSystem : MonoBehaviour
         RelicType.LargeMult => new Relic(type, RelicCategory.ComboEngine,
             "Gilded Ledger", "Always gain +9 Mult.",
             "Every debt comes due."),
+        RelicType.MarkedNumbers => new Relic(type, RelicCategory.ComboEngine,
+            "Marked Numbers", "Each Ace, 4, 7, or 9 played adds +3 Mult.",
+            "Some numbers refuse to stay buried."),
+        RelicType.FourthBell => new Relic(type, RelicCategory.ComboEngine,
+            "Fourth Bell", "Each 4 played adds +4 Mult. Stacks with Marked Numbers.",
+            "Four knocks. Then silence."),
+        RelicType.OddEtchings => new Relic(type, RelicCategory.ComboEngine,
+            "Odd Etchings", "Each odd-valued card gains +4 Points.",
+            "The marks never come in pairs."),
+        RelicType.EvenEtchings => new Relic(type, RelicCategory.ComboEngine,
+            "Even Etchings", "Each even-valued card gains +4 Points.",
+            "Every score has its twin."),
+        RelicType.RoyalCourt => new Relic(type, RelicCategory.ComboEngine,
+            "Royal Court", "Each Jack, Queen or King gains +8 Points.",
+            "They ruled long before the cell was built."),
+        RelicType.SmallChange => new Relic(type, RelicCategory.ComboEngine,
+            "Small Change", "Each 2, 3 or 4 gains +6 Points.",
+            "The smallest scraps still matter."),
+        RelicType.AceInTheHole => new Relic(type, RelicCategory.ComboEngine,
+            "Ace in the Hole", "Each Ace gains +20 Points.",
+            "One last card kept from the guards."),
+        RelicType.BrokenRuler => new Relic(type, RelicCategory.ComboEngine,
+            "Broken Ruler", "Playing any 3 consecutive ranks grants +4 Mult once per offer.",
+            "A line through the impossible."),
+        RelicType.TwinTeeth => new Relic(type, RelicCategory.ComboEngine,
+            "Twin Teeth", "Playing at least one Pair grants +2 Mult once per offer.",
+            "No two teeth were ever the same."),
+        RelicType.ThreeKnocks => new Relic(type, RelicCategory.ComboEngine,
+            "Three Knocks", "Playing at least Three of a Kind grants +5 Mult once per offer.",
+            "Something answers the third knock."),
+        RelicType.UniformThread => new Relic(type, RelicCategory.ComboEngine,
+            "Uniform Thread", "Offering 3 or more cards all of one suit grants +6 Mult.",
+            "No one wore their own clothes here."),
         RelicType.FourthHand      => new Relic(type, RelicCategory.RuleChanger,       "Fourth Hand",      "Play up to 4 cards per turn.",                                        "More hands, more suffering."),
         RelicType.DuelistsCode    => new Relic(type, RelicCategory.RuleChanger,       "Duelist's Code",   "Can offer only 1 card per hand. Gain x3 xMult on that card.",                        "One blow, decisive."),
         RelicType.PerfectGamble   => new Relic(type, RelicCategory.RuleChanger,       "Perfect Gamble",   "Once per round, discard your entire hand and redraw.",                "Burn it all. Start clean."),
@@ -430,8 +530,8 @@ public class RelicSystem : MonoBehaviour
         RelicType.PairAddict      => new Relic(type, RelicCategory.ComboEngine,       "Pair Addict",      "Playing a Pair or Two Pair triples the base +Mult.",                                "Symmetry is sacred."),
         RelicType.LowCardGenius   => new Relic(type, RelicCategory.ComboEngine,       "Low Card Genius",  "If all played cards are ≤4, double your +Mult.",         "Weakness weaponised."),
         RelicType.HighRoller      => new Relic(type, RelicCategory.ComboEngine,       "High Roller",      "Cards with face value ≥10 each contribute +5 bonus points.",          "Only royalty survives."),
-        RelicType.OddCollector    => new Relic(type, RelicCategory.ComboEngine,       "Odd Collector",    "Each odd-valued card played adds +0.2 Mult.",                    "The odd ones hold the power."),
-        RelicType.EvenMaster      => new Relic(type, RelicCategory.ComboEngine,       "Even Master",      "Each even-valued card played adds +0.2 Mult.",                   "Balance is strength."),
+        RelicType.OddCollector    => new Relic(type, RelicCategory.ComboEngine,       "Odd Collector",    "Each odd-valued card played adds +2 Mult.",                    "The odd ones hold the power."),
+        RelicType.EvenMaster      => new Relic(type, RelicCategory.ComboEngine,       "Even Master",      "Each even-valued card played adds +2 Mult.",                   "Balance is strength."),
         RelicType.ComboBank       => new Relic(type, RelicCategory.ComboEngine,       "Combo Bank",       "Each unused combo type grows your xMult by 0.1 per round.",          "Patience compounds interest."),
         RelicType.LoneWolf        => new Relic(type, RelicCategory.ScalingMultiplier, "Lone Wolf",        "Each single-card play adds +0.2 to persistent xMult. No cap.", "Alone, unbowed."),
         RelicType.TurnInvestor    => new Relic(type, RelicCategory.ScalingMultiplier, "Turn Investor",    "Gain +2 Mult for every 5 gold held. No cap; updates when gold changes.",                     "Every breath is compounding interest."),
