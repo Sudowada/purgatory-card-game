@@ -287,8 +287,9 @@ public class ShopRelicInterface : MonoBehaviour
         sectionStyle.normal.textColor = ShopUITheme.Muted;
 
         string shownGold = Mathf.RoundToInt(displayedGold).ToString("N0");
+        // Small, crisp punch on a changed balance, matching ScoreHUD number feedback.
         numberStyle.fontSize = Mathf.RoundToInt((shownGold.Length > 9 ? 25f :
-            shownGold.Length > 7 ? 30f : 37f) * scale);
+            shownGold.Length > 7 ? 30f : 37f) * scale * (1f + flash * 0.08f));
         numberStyle.normal.textColor = Color.Lerp(ShopUITheme.Gold, Color.white, flash * 0.55f);
         GUI.Label(new Rect(area.x + 12f * scale, area.y + 27f * scale, area.width - 24f * scale, 42f * scale),
             shownGold + " G", numberStyle);
