@@ -354,6 +354,12 @@ public class RelicSystem : MonoBehaviour
         int finalScore = Mathf.Max(0,
             Mathf.RoundToInt(result.points * addMult * mulMult * result.tierMult) + flatBonus);
         result.finalScore = finalScore;
+        // Keep the in-world OFFER result message aligned with the four
+        // distinct scoring ingredients shown in ScoreHUD.
+        result.description =
+            $"{result.comboName} | DIFF +{result.difference} | " +
+            $"{result.points:N0} POINTS · +{addMult:0.##} +MULT · " +
+            $"x{mulMult:0.##} xMULT · x{result.tierMult:0.##} DIFF xMULT";
         return finalScore;
     }
     // ── Rot threshold modifier (called from Card.InitCardStats) ───────────────
@@ -410,7 +416,7 @@ public class RelicSystem : MonoBehaviour
             "Gilded Ledger", "Always gain +9 Mult.",
             "Every debt comes due."),
         RelicType.FourthHand      => new Relic(type, RelicCategory.RuleChanger,       "Fourth Hand",      "Play up to 4 cards per turn.",                                        "More hands, more suffering."),
-        RelicType.DuelistsCode    => new Relic(type, RelicCategory.RuleChanger,       "Duelist's Code",   "Play only 1 card — but its score is tripled.",                        "One blow, decisive."),
+        RelicType.DuelistsCode    => new Relic(type, RelicCategory.RuleChanger,       "Duelist's Code",   "Can offer only 1 card per hand. Gain x3 xMult on that card.",                        "One blow, decisive."),
         RelicType.PerfectGamble   => new Relic(type, RelicCategory.RuleChanger,       "Perfect Gamble",   "Once per round, discard your entire hand and redraw.",                "Burn it all. Start clean."),
         RelicType.ComboMachine    => new Relic(type, RelicCategory.RuleChanger,       "Combo Machine",    "Pairs score as Three of a Kind.",                                     "Two becomes three in purgatory."),
         RelicType.CardCycler      => new Relic(type, RelicCategory.RuleChanger,       "Card Cycler",      "Playing 3+ cards draws 1 additional card.",                           "Motion is survival."),
