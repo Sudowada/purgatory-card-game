@@ -15,6 +15,10 @@ public enum RelicType
     // Flexible scoring relics: append only to preserve serialized enum IDs.
     SpadeSeal, HeartSeal, DiamondSeal, ClubSeal,
     SmallMult, MediumMult, LargeMult,
+    // Rank/parity relics: append to preserve saved enum values.
+    MarkedNumbers, FourthBell,
+    OddEtchings, EvenEtchings, RoyalCourt, SmallChange, AceInTheHole,
+    PokerChip, // appended for save-compatible serialized enum IDs
 }
 public enum RelicRarity { Common, Uncommon, Rare }
 
@@ -48,6 +52,9 @@ public class RelicSystem : MonoBehaviour
     private bool _decayAll            = false;
     public float persistentMult = 1.0f;
     public float LoadedDiceMult { get; private set; }
+    // Commit-only result: 2 on heads, 0 on tails, 1 without a Poker Chip roll.
+    // Score previews must NEVER roll the coin or change this value.
+    public int LastPokerChipMultiplier { get; private set; } = 1;
 
     public void OnShopRerolled()
     {
@@ -69,6 +76,7 @@ public class RelicSystem : MonoBehaviour
             case RelicType.TimeEngine:
             case RelicType.ComboBank:
             case RelicType.GoldenCard:
+            case RelicType.PokerChip:
             case RelicType.GlassCannon:
             case RelicType.DoubleDecay:
                 return RelicRarity.Rare;
@@ -85,6 +93,14 @@ public class RelicSystem : MonoBehaviour
             case RelicType.MediumMult: return RelicRarity.Uncommon;
             case RelicType.SmallMult: return RelicRarity.Common;
             case RelicType.LargeMult: return RelicRarity.Rare;
+            // Parity point boosts are accessible, focused ranks take planning.
+            case RelicType.OddEtchings:
+            case RelicType.EvenEtchings: return RelicRarity.Common;
+            case RelicType.MarkedNumbers:
+            case RelicType.FourthBell:
+            case RelicType.RoyalCourt:
+            case RelicType.SmallChange: return RelicRarity.Uncommon;
+            case RelicType.AceInTheHole: return RelicRarity.Rare;
         }
         // Preserve the old shop's category buckets for legacy relics until
         // individual rarities are assigned during the catalogue overhaul.
@@ -151,6 +167,22 @@ public class RelicSystem : MonoBehaviour
             default: return 0;
         }
     }
+    /// <summary>
+    /// Point relics stack per card, using card identity (A=1, J=11, Q=12, K=13).
+    /// Only changes raw Points; never alters face-value differences or combos.
+    /// </summary>
+    public int GetRankPointBonus(int rank)
+    {
+        if (rank < 1 || rank > 13) return 0;
+        int bonus = 0;
+        if ((rank & 1) == 1 && HasRelic(RelicType.OddEtchings)) bonus += 4;
+        if ((rank & 1) == 0 && HasRelic(RelicType.EvenEtchings)) bonus += 4;
+        if (rank >= 11 && HasRelic(RelicType.RoyalCourt)) bonus += 8;
+        if (rank >= 2 && rank <= 4 && HasRelic(RelicType.SmallChange)) bonus += 6;
+        if (rank == 1 && HasRelic(RelicType.AceInTheHole)) bonus += 20;
+        return bonus;
+    }
+
     private void OnRelicAdded(RelicType type)
     {
         ShopManager.Instance?.OnEconomyRelicAcquired(type);
@@ -280,14 +312,31 @@ public class RelicSystem : MonoBehaviour
     // ─────────────────────────────────────────────────────────────────────────
     public int ApplyRelicModifiers(ComboResult result, bool consumeOneShotEffects = true)
     {
-        // Penalty hands — relics don't reduce penalty except GlassCannon doubles it
+        // Previewing must never roll or alter the last committed payout.
+        if (consumeOneShotEffects) LastPokerChipMultiplier = 1;
+        // Negative-score offers are also a risk: a heads doubles the penalty,
+        // while tails removes it. This prevents poker-chip free immunity.
         if (result.isPenalty)
         {
             int penalty = result.penaltyAmount;
             if (HasRelic(RelicType.GlassCannon)) penalty = Mathf.RoundToInt(penalty * 2f);
             result.penaltyAmount = penalty;
-            result.finalScore = -penalty;
-            return result.finalScore;
+            int score = -penalty;
+            if (consumeOneShotEffects && HasRelic(RelicType.PokerChip))
+            {
+                float chance = ShopManager.Instance != null
+                    ? ShopManager.Instance.PokerChipWinChance : 0.5f;
+                bool heads = Random.value < chance;
+                LastPokerChipMultiplier = heads ? 2 : 0;
+                score = heads
+                    ? (int)System.Math.Max(-int.MaxValue, (long)score * 2L) : 0;
+                result.multiplicativeMult = LastPokerChipMultiplier;
+                result.description += heads
+                    ? " | POKER CHIP: HEADS x2 PENALTY"
+                    : " | POKER CHIP: TAILS 0 PENALTY";
+            }
+            result.finalScore = score;
+            return score;
         }
         var   cards   = result.scoringCards;
         float addMult = result.additiveMult;
@@ -296,6 +345,20 @@ public class RelicSystem : MonoBehaviour
         if (HasRelic(RelicType.SmallMult)) addMult += 3f;
         if (HasRelic(RelicType.MediumMult)) addMult += 6f;
         if (HasRelic(RelicType.LargeMult)) addMult += 9f;
+        // All of these are additive, per-card (not once per offer).
+        if (cards != null)
+        {
+            if (HasRelic(RelicType.OddCollector))
+                addMult += cards.Count(c => (c.cardValue & 1) == 1) * 2f;
+            if (HasRelic(RelicType.EvenMaster))
+                addMult += cards.Count(c => (c.cardValue & 1) == 0) * 2f;
+            if (HasRelic(RelicType.MarkedNumbers))
+                addMult += cards.Count(c => c.cardValue == 1 || c.cardValue == 4 ||
+                                            c.cardValue == 7 || c.cardValue == 9) * 3f;
+            if (HasRelic(RelicType.FourthBell))
+                addMult += cards.Count(c => c.cardValue == 4) * 4f;
+
+        }
         // Turn Investor: dynamic +Mult from gold HELD, not spent or earned
         // lifetime gold. Uncapped, recalculated for both preview and scoring.
         if (HasRelic(RelicType.TurnInvestor) && ShopManager.Instance != null)
@@ -330,12 +393,6 @@ public class RelicSystem : MonoBehaviour
         if (HasRelic(RelicType.LowCardGenius) && cards != null)
             if (cards.All(c => c.cardValue <= 4))
                 addMult *= 2f;
-        // ── OddCollector: +20% additive per odd card ──────────────────────────
-        if (HasRelic(RelicType.OddCollector) && cards != null)
-            addMult += cards.Count(c => c.cardValue % 2 != 0) * 0.2f;
-        // ── EvenMaster: +20% additive per even card ───────────────────────────
-        if (HasRelic(RelicType.EvenMaster) && cards != null)
-            addMult += cards.Count(c => c.cardValue % 2 == 0) * 0.2f;
         // ── PerfectHand: no decayed cards → +10 flat after formula ───────────
         int flatBonus = 0;
         if (HasRelic(RelicType.PerfectHand) && cards != null && !cards.Any(c => c.isDecayed))
@@ -353,13 +410,31 @@ public class RelicSystem : MonoBehaviour
         // ── FINAL: Points × +Mult × xMult × Difference xMult + flat ──────────
         int finalScore = Mathf.Max(0,
             Mathf.RoundToInt(result.points * addMult * mulMult * result.tierMult) + flatBonus);
+        string pokerChipMessage = "";
+        if (consumeOneShotEffects && HasRelic(RelicType.PokerChip))
+        {
+            float chance = ShopManager.Instance != null
+                ? ShopManager.Instance.PokerChipWinChance : 0.5f;
+            bool heads = Random.value < chance;
+            LastPokerChipMultiplier = heads ? 2 : 0;
+            // The chip acts LAST on the complete hand score (including flat
+            // bonuses), not just on one scoring ingredient. 0 truly means 0.
+            finalScore = heads
+                ? (int)System.Math.Min(int.MaxValue, (long)finalScore * 2L) : 0;
+            mulMult *= LastPokerChipMultiplier; // Show the outcome in the HUD.
+            result.multiplicativeMult = mulMult;
+            pokerChipMessage = heads
+                ? " | POKER CHIP: HEADS x2"
+                : " | POKER CHIP: TAILS 0";
+        }
         result.finalScore = finalScore;
         // Keep the in-world OFFER result message aligned with the four
         // distinct scoring ingredients shown in ScoreHUD.
         result.description =
             $"{result.comboName} | DIFF +{result.difference} | " +
             $"{result.points:N0} POINTS · +{addMult:0.##} +MULT · " +
-            $"x{mulMult:0.##} xMULT · x{result.tierMult:0.##} DIFF xMULT";
+            $"x{mulMult:0.##} xMULT · x{result.tierMult:0.##} DIFF xMULT" +
+            pokerChipMessage;
         return finalScore;
     }
     // ── Rot threshold modifier (called from Card.InitCardStats) ───────────────
@@ -394,6 +469,10 @@ public class RelicSystem : MonoBehaviour
         RelicType.CoinFlip => new Relic(type, RelicCategory.RuleChanger,
             "Coin Flip", "50% chance after each completed round (3 encounters) to earn a saved free reroll.",
             "Heads, you get another chance."),
+        RelicType.PokerChip => new Relic(type, RelicCategory.RiskChallenge,
+            "Poker Chip",
+            "Flip on every offer: HEADS doubles the whole score (even penalties); TAILS sets it to 0. 50% base, +2% per Luck (max 95%).",
+            "Gamblers always quit before hitting it big"),
         RelicType.SpadeSeal => new Relic(type, RelicCategory.ComboEngine,
             "Spade Seal", "Each Spade card gains +15 Points while this relic is owned.",
             "Steel remembers every cut."),
@@ -415,6 +494,27 @@ public class RelicSystem : MonoBehaviour
         RelicType.LargeMult => new Relic(type, RelicCategory.ComboEngine,
             "Gilded Ledger", "Always gain +9 Mult.",
             "Every debt comes due."),
+        RelicType.MarkedNumbers => new Relic(type, RelicCategory.ComboEngine,
+            "Marked Numbers", "Each Ace, 4, 7, or 9 played adds +3 Mult.",
+            "Some numbers refuse to stay buried."),
+        RelicType.FourthBell => new Relic(type, RelicCategory.ComboEngine,
+            "Fourth Bell", "Each 4 played adds +4 Mult. Stacks with Marked Numbers.",
+            "Four knocks. Then silence."),
+        RelicType.OddEtchings => new Relic(type, RelicCategory.ComboEngine,
+            "Odd Etchings", "Each odd-valued card gains +4 Points.",
+            "The marks never come in pairs."),
+        RelicType.EvenEtchings => new Relic(type, RelicCategory.ComboEngine,
+            "Even Etchings", "Each even-valued card gains +4 Points.",
+            "Every score has its twin."),
+        RelicType.RoyalCourt => new Relic(type, RelicCategory.ComboEngine,
+            "Royal Court", "Each Jack, Queen or King gains +8 Points.",
+            "They ruled long before the cell was built."),
+        RelicType.SmallChange => new Relic(type, RelicCategory.ComboEngine,
+            "Small Change", "Each 2, 3 or 4 gains +6 Points.",
+            "The smallest scraps still matter."),
+        RelicType.AceInTheHole => new Relic(type, RelicCategory.ComboEngine,
+            "Ace in the Hole", "Each Ace gains +20 Points.",
+            "One last card kept from the guards."),
         RelicType.FourthHand      => new Relic(type, RelicCategory.RuleChanger,       "Fourth Hand",      "Play up to 4 cards per turn.",                                        "More hands, more suffering."),
         RelicType.DuelistsCode    => new Relic(type, RelicCategory.RuleChanger,       "Duelist's Code",   "Can offer only 1 card per hand. Gain x3 xMult on that card.",                        "One blow, decisive."),
         RelicType.PerfectGamble   => new Relic(type, RelicCategory.RuleChanger,       "Perfect Gamble",   "Once per round, discard your entire hand and redraw.",                "Burn it all. Start clean."),
@@ -430,8 +530,8 @@ public class RelicSystem : MonoBehaviour
         RelicType.PairAddict      => new Relic(type, RelicCategory.ComboEngine,       "Pair Addict",      "Playing a Pair or Two Pair triples the base +Mult.",                                "Symmetry is sacred."),
         RelicType.LowCardGenius   => new Relic(type, RelicCategory.ComboEngine,       "Low Card Genius",  "If all played cards are ≤4, double your +Mult.",         "Weakness weaponised."),
         RelicType.HighRoller      => new Relic(type, RelicCategory.ComboEngine,       "High Roller",      "Cards with face value ≥10 each contribute +5 bonus points.",          "Only royalty survives."),
-        RelicType.OddCollector    => new Relic(type, RelicCategory.ComboEngine,       "Odd Collector",    "Each odd-valued card played adds +0.2 Mult.",                    "The odd ones hold the power."),
-        RelicType.EvenMaster      => new Relic(type, RelicCategory.ComboEngine,       "Even Master",      "Each even-valued card played adds +0.2 Mult.",                   "Balance is strength."),
+        RelicType.OddCollector    => new Relic(type, RelicCategory.ComboEngine,       "Odd Collector",    "Each odd-valued card played adds +2 Mult.",                    "The odd ones hold the power."),
+        RelicType.EvenMaster      => new Relic(type, RelicCategory.ComboEngine,       "Even Master",      "Each even-valued card played adds +2 Mult.",                   "Balance is strength."),
         RelicType.ComboBank       => new Relic(type, RelicCategory.ComboEngine,       "Combo Bank",       "Each unused combo type grows your xMult by 0.1 per round.",          "Patience compounds interest."),
         RelicType.LoneWolf        => new Relic(type, RelicCategory.ScalingMultiplier, "Lone Wolf",        "Each single-card play adds +0.2 to persistent xMult. No cap.", "Alone, unbowed."),
         RelicType.TurnInvestor    => new Relic(type, RelicCategory.ScalingMultiplier, "Turn Investor",    "Gain +2 Mult for every 5 gold held. No cap; updates when gold changes.",                     "Every breath is compounding interest."),

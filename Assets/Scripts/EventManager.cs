@@ -44,8 +44,13 @@ public class EventManager : MonoBehaviour
     /// </summary>
     public void TriggerEvents(List<string> eventIDs, List<Card> playedCards)
     {
+        // Snapshot the 7s immediately; card slots may be redrawn while the
+        // event coroutine is waiting for the offer-score animation.
+        var sevens = playedCards.Where(c => c != null && c.cardValue == 7).Take(3).ToList();
+        bool cleanSevens = sevens.Count == 3 && sevens.All(c => c.decayLevel == 0);
+        bool rottenSevens = sevens.Count == 3 && sevens.All(c => c.isDecayed);
         foreach (var id in eventIDs)
-            StartCoroutine(ResolveEvent(id, playedCards));
+            StartCoroutine(ResolveEvent(id, playedCards, cleanSevens, rottenSevens));
     }
 
     /// <summary>How many times a given event has fired this run.</summary>
@@ -63,7 +68,7 @@ public class EventManager : MonoBehaviour
     // Add new event IDs here. Each case is a self-contained world reaction.
     // ─────────────────────────────────────────────────────────────────────────
 
-    IEnumerator ResolveEvent(string id, List<Card> played)
+    IEnumerator ResolveEvent(string id, List<Card> played, bool cleanSevens, bool rottenSevens)
     {
         // Track fire count
         _fireCounts.TryGetValue(id, out int count);
@@ -98,13 +103,17 @@ public class EventManager : MonoBehaviour
                 break;
 
             case "evt_lucky_trap":
-                // Determine which of the three 777 outcomes applies
-                // based on the decay state of the three 7s played
-                bool allFresh    = played.All(c => c.decayLevel == 0);
-                bool allFullyRot = played.All(c => c.isDecayed);
-                // Mixed = any decay present but not all fully rotted
+                // Any 7-7-7 outcome unlocks the slot machine ONCE,
+                // including runs with a fourth non-seven card.
+                var shopForSevens = ShopManager.Instance;
+                if (shopForSevens != null &&
+                    !shopForSevens.HasCollectible(ShopManager.SlotMachineCollectible))
+                {
+                    shopForSevens.AddCollectible(ShopManager.SlotMachineCollectible);
+                    ShowEventMessage("A slot machine joins your collectibles.", rare: true);
+                }
 
-                if (allFresh)
+                if (cleanSevens)
                 {
                     // ── JACKPOT: 3 fresh 7s ───────────────────────────────
                     ShowEventMessage("✦ JACKPOT ✦  Three clean sevens!", rare: true);
@@ -118,7 +127,7 @@ public class EventManager : MonoBehaviour
                         DocumentSystem.Instance?.Unlock("doc_777_jackpot",
                             "Three sevens. All clean. The stars aligned.\nYou won't see this twice.");
                 }
-                else if (allFullyRot)
+                else if (rottenSevens)
                 {
                     // ── UNLUCKY 7: all 3 fully rotted ────────────────────
                     ShowEventMessage("Three rotten sevens...", rare: true);
@@ -128,14 +137,18 @@ public class EventManager : MonoBehaviour
                     if (ShopManager.Instance != null)
                         ShopManager.Instance.rareChanceModifier -= 0.20f;
                     CameraShake(0.7f);
-                    // Give the slot machine collectible (persists between runs)
-                    ShopManager.Instance?.AddCollectible("collectible_slot_machine");
-                    if (firstTime)
+                    // Rotten triple sevens grant a separate permanent
+                    // collectible, which unlocks the rare Poker Chip relic.
+                    var shop = ShopManager.Instance;
+                    bool foundChip = shop != null &&
+                        !shop.HasCollectible(ShopManager.PokerChipCollectible);
+                    shop?.AddCollectible(ShopManager.PokerChipCollectible);
+                    if (foundChip)
+                    {
+                        ShowEventMessage("POKER CHIP FOUND — a dangerous new relic is unlocked.", rare: true);
                         DocumentSystem.Instance?.Unlock("doc_777_unlucky",
-                            "Three rotten sevens. The worst hand.\nSomething small and mechanical appeared on the table.\nIt wasn't there before.");
-                    else
-                        DocumentSystem.Instance?.Unlock($"doc_777_unlucky_{count}",
-                            $"Again. The slot machine ticks once more.\n({count + 1} times now.)");
+                            "Three rotten sevens. A single poker chip remains.\nGamblers always quit before hitting it big.");
+                    }
                 }
                 else
                 {

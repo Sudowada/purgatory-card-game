@@ -955,7 +955,13 @@ public class GameManager : MonoBehaviour
         {
             scoreBoost = ConsumableSystem.Instance != null
                 ? ConsumableSystem.Instance.ConsumeScoreBoost() : 0;
-            result.finalScore += scoreBoost;
+            // Poker Chip's committed flip applies to the ENTIRE offered score,
+            // including consumable boosts. Tails must still leave exactly 0.
+            int payout = RelicSystem.Instance != null
+                ? RelicSystem.Instance.LastPokerChipMultiplier : 1;
+            scoreBoost = (int)System.Math.Min(int.MaxValue, (long)scoreBoost * payout);
+            result.finalScore = (int)System.Math.Min(int.MaxValue,
+                (long)result.finalScore + scoreBoost);
         }
         int scoreBefore = roundScore;
         int scoreGained = result.finalScore;
@@ -1055,7 +1061,13 @@ public class GameManager : MonoBehaviour
         {
             scoreBoost = ConsumableSystem.Instance != null
                 ? ConsumableSystem.Instance.ConsumeScoreBoost() : 0;
-            result.finalScore += scoreBoost;
+            // Poker Chip's committed flip applies to the ENTIRE offered score,
+            // including consumable boosts. Tails must still leave exactly 0.
+            int payout = RelicSystem.Instance != null
+                ? RelicSystem.Instance.LastPokerChipMultiplier : 1;
+            scoreBoost = (int)System.Math.Min(int.MaxValue, (long)scoreBoost * payout);
+            result.finalScore = (int)System.Math.Min(int.MaxValue,
+                (long)result.finalScore + scoreBoost);
         }
         int scoreBefore = roundScore;
         int scoreGained = result.finalScore;

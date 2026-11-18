@@ -6,7 +6,8 @@ using DG.Tweening;
 
 /// <summary>
 /// Displays collectible items earned through secret combos.
-/// The slot machine appears here when the player plays 3 fully-rotted 7s.
+/// Any three sevens unlock the clickable slot machine once. Fully rotten
+/// sevens additionally unlock the collectible Poker Chip.
 /// Collectibles persist across runs via ShopManager.collectibles.
 /// </summary>
 public class CollectiblesTable : MonoBehaviour
@@ -18,6 +19,13 @@ public class CollectiblesTable : MonoBehaviour
     [SerializeField] private Transform  itemContainer;
     [SerializeField] private TMP_FontAsset tableFont;
 
+    private GameObject wagerPanel;
+    private TextMeshProUGUI wagerBalance;
+    private TextMeshProUGUI wagerFeedback;
+    private readonly System.Collections.Generic.List<(Button button, int amount)> wagerButtons =
+        new System.Collections.Generic.List<(Button, int)>();
+    private Button allInButton;
+
     void Awake()
     {
         if (Instance == null) Instance = this;
@@ -28,6 +36,23 @@ public class CollectiblesTable : MonoBehaviour
     {
         if (tablePanel == null) BuildTableUI();
         Refresh();
+    }
+
+    void Update()
+    {
+        if (wagerPanel == null || !wagerPanel.activeSelf) return;
+        ShopManager shop = ShopManager.Instance;
+        if (shop == null || !shop.HasCollectible(ShopManager.SlotMachineCollectible))
+        {
+            CloseSlotMachine();
+            return;
+        }
+        if (wagerBalance != null)
+            wagerBalance.text = "GOLD  " + shop.playerGold.ToString("N0") + "     COIN  50% / 50%";
+        foreach (var entry in wagerButtons)
+            if (entry.button != null)
+                entry.button.interactable = shop.playerGold >= entry.amount;
+        if (allInButton != null) allInButton.interactable = shop.playerGold > 0;
     }
 
     // ── PUBLIC ────────────────────────────────────────────────────────────────
@@ -97,8 +122,19 @@ public class CollectiblesTable : MonoBehaviour
                 // Give it a subtle spin animation
                 go.transform.DORotate(new Vector3(0, 0, 3f), 1.2f)
                     .SetLoops(-1, LoopType.Yoyo).SetEase(Ease.InOutSine);
-                // Tooltip on hover
-                AddTooltip(go, "\"Three rotten sevens.\nMay it bring you worse luck than it brought me.\"\n\n— Unknown");
+                // Collectible now has an actual interactive use.
+                AddTooltip(go, "SLOT MACHINE\nFound by offering 7-7-7.\nClick to wager gold on a fair coin flip: double your wager or lose it.");
+                var slotButton = go.AddComponent<Button>();
+                slotButton.transition = Selectable.Transition.ColorTint;
+                slotButton.onClick.AddListener(OpenSlotMachine);
+                break;
+
+            case "collectible_poker_chip":
+                icon.text  = "♠";
+                lbl.text   = "Poker Chip";
+                bg.color   = new Color(0.19f, 0.05f, 0.07f, 0.96f);
+                icon.color = new Color(0.98f, 0.72f, 0.47f);
+                AddTooltip(go, "Gamblers always quit before hitting it big\nUnlocks the rare Poker Chip relic in the shop.");
                 break;
 
             // Add more collectibles here as you design them
@@ -112,6 +148,115 @@ public class CollectiblesTable : MonoBehaviour
         // Entrance animation
         go.transform.localScale = Vector3.zero;
         go.transform.DOScale(Vector3.one, 0.4f).SetEase(Ease.OutBack);
+    }
+
+    // ── SLOT MACHINE: COIN FLIP WAGER ─────────────────────────────────────────
+    // A compact UGUI dialog opened by clicking the collectible's table icon.
+    // Betting is independent of the Poker Chip's luck-adjusted score flip.
+    private TextMeshProUGUI AddSlotText(Transform parent, string name,
+        Vector2 position, Vector2 size, string text, int fontSize, Color color)
+    {
+        var go = new GameObject(name, typeof(RectTransform), typeof(TextMeshProUGUI));
+        go.transform.SetParent(parent, false);
+        var rect = go.GetComponent<RectTransform>();
+        rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 1f);
+        rect.pivot = new Vector2(0.5f, 1f);
+        rect.anchoredPosition = position;
+        rect.sizeDelta = size;
+        var label = go.GetComponent<TextMeshProUGUI>();
+        label.text = text;
+        label.fontSize = fontSize;
+        label.color = color;
+        label.alignment = TextAlignmentOptions.Center;
+        label.enableWordWrapping = true;
+        label.raycastTarget = false;
+        if (tableFont != null) label.font = tableFont;
+        return label;
+    }
+
+    private Button AddWagerButton(Transform parent, string label,
+        Vector2 position, System.Action onClick)
+    {
+        var go = new GameObject("Bet " + label, typeof(RectTransform), typeof(Image), typeof(Button));
+        go.transform.SetParent(parent, false);
+        var rect = go.GetComponent<RectTransform>();
+        rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 1f);
+        rect.pivot = new Vector2(0.5f, 1f);
+        rect.anchoredPosition = position;
+        rect.sizeDelta = new Vector2(96f, 40f);
+        var image = go.GetComponent<Image>();
+        image.color = new Color(0.31f, 0.25f, 0.16f, 1f);
+        var btn = go.GetComponent<Button>();
+        btn.onClick.AddListener(() => onClick());
+        // Child text sits inside the button.
+        AddSlotText(go.transform, "Button Label", new Vector2(0f, -7f),
+            new Vector2(90f, 29f), label, 17, new Color(0.97f, 0.86f, 0.63f));
+        return btn;
+    }
+
+    private void OpenSlotMachine()
+    {
+        ShopManager shop = ShopManager.Instance;
+        if (shop == null || !shop.HasCollectible(ShopManager.SlotMachineCollectible)) return;
+        if (wagerPanel == null) CreateWagerPanel();
+        if (wagerPanel == null) return;
+        wagerPanel.SetActive(true);
+        wagerPanel.transform.SetAsLastSibling();
+        if (wagerFeedback != null)
+            wagerFeedback.text = "HEADS: win the amount wagered. TAILS: lose the wager.";
+    }
+
+    private void CloseSlotMachine()
+    {
+        if (wagerPanel != null) wagerPanel.SetActive(false);
+    }
+
+    private void WagerGold(int requested)
+    {
+        ShopManager shop = ShopManager.Instance;
+        if (shop == null || wagerFeedback == null) return;
+        int wager = requested < 0 ? shop.playerGold : requested;
+        shop.TryGambleGold(wager, out _, out string outcome);
+        wagerFeedback.text = outcome;
+    }
+
+    private void CreateWagerPanel()
+    {
+        var canvas = tablePanel != null ? tablePanel.GetComponentInParent<Canvas>() : null;
+        if (canvas == null) canvas = FindFirstObjectByType<Canvas>();
+        if (canvas == null) return;
+        wagerPanel = new GameObject("Slot Machine Gold Wager",
+            typeof(RectTransform), typeof(Image));
+        wagerPanel.transform.SetParent(canvas.transform, false);
+        var rect = wagerPanel.GetComponent<RectTransform>();
+        rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 0.5f);
+        rect.pivot = new Vector2(0.5f, 0.5f);
+        rect.anchoredPosition = Vector2.zero;
+        rect.sizeDelta = new Vector2(450f, 255f);
+        var bg = wagerPanel.GetComponent<Image>();
+        bg.color = new Color(0.055f, 0.060f, 0.075f, 0.97f);
+
+        AddSlotText(rect, "Header", new Vector2(0f, -16f),
+            new Vector2(415f, 30f), "SLOT MACHINE  ·  DOUBLE OR NOTHING",
+            20, new Color(0.95f, 0.77f, 0.36f));
+        wagerBalance = AddSlotText(rect, "Gold Balance", new Vector2(0f, -61f),
+            new Vector2(415f, 25f), "", 18, Color.white);
+        wagerFeedback = AddSlotText(rect, "Outcome", new Vector2(0f, -103f),
+            new Vector2(415f, 39f), "", 16, new Color(0.90f, 0.84f, 0.71f));
+
+        wagerButtons.Clear();
+        for (int i = 0; i < 3; i++)
+        {
+            int stake = i == 0 ? 1 : i == 1 ? 5 : 10;
+            var button = AddWagerButton(rect, stake + " G",
+                new Vector2(-159f + 104f * i, -157f), () => WagerGold(stake));
+            wagerButtons.Add((button, stake));
+        }
+        allInButton = AddWagerButton(rect, "ALL IN",
+            new Vector2(153f, -157f), () => WagerGold(-1));
+        var close = AddWagerButton(rect, "CLOSE", new Vector2(0f, -207f),
+            CloseSlotMachine);
+        close.GetComponent<RectTransform>().sizeDelta = new Vector2(130f, 34f);
     }
 
     void AddTooltip(GameObject target, string text)
