@@ -78,6 +78,20 @@ public class GameManager : MonoBehaviour
     private CardAnimator cardAnimator;
     private DeckVisual   deckVisual;
     private List<(int value, string suit)> discardPile = new List<(int, string)>();
+    [Header("Three-Card Discard")]
+    [SerializeField, Min(0)] private int discardActionsPerHand = 1;
+    private readonly List<Card> pendingDiscardCards = new List<Card>(3);
+    private int discardsUsedThisHand;
+    public int DiscardSelectionCount => pendingDiscardCards.Count;
+    public int DiscardActionsRemaining => Mathf.Max(0, discardActionsPerHand - discardsUsedThisHand);
+    public string DiscardSelectionLabel => string.Join("  ",
+        pendingDiscardCards.Where(c => c != null)
+            .Select(c => c.GetDisplayValue() + c.cardSuit));
+    public string DiscardHudStatus => DiscardActionsRemaining <= 0
+        ? "DISCARD USED  ·  RESET NEXT HAND"
+        : pendingDiscardCards.Count == 0
+            ? "DISCARD 0/3  ·  HOVER + D TO MARK"
+            : $"DISCARD {pendingDiscardCards.Count}/3  ·  HOVER + D  ·  {DiscardSelectionLabel}";
     // ── Game State ────────────────────────────────────────────────────────────
     private List<Card> selectedCards = new List<Card>();
     private int  roundScore          = 0;
@@ -153,17 +167,82 @@ public class GameManager : MonoBehaviour
         !_inputBlocked && handsLeft > 0;
     public bool ShouldRefillOffering => !runFinished && !_thresholdReached && handsLeft > 0;
     public int CardsRemainingInDrawPile => Mathf.Max(0, currentDeck.Count - deckIndex);
-    /// <summary>Immediate discard replacement. Decay of any amount prevents discard.
-    /// Existing announced targets keep tracking the slot, so discarding cannot erase an attack.</summary>
+    /// <summary>
+    /// D marks or unmarks the hovered card. Once three healthy hand cards are
+    /// marked, they all go to discard and get three immediate replacements.
+    /// One action per hand by default, configurable in the Inspector.
+    /// </summary>
     public bool TryDiscardCard(Card card)
     {
-        if (!CanPlayOffering || card == null || card.decayLevel > 0 || card.isDecayed ||
-            !handHolder.cards.Contains(card) || CardsRemainingInDrawPile <= 0) return false;
-        discardPile.Add((card.cardValue, card.cardSuit));
-        card.Deselect();
-        TryAssignNextCard(card);
+        if (!CanPlayOffering || card == null || handHolder == null ||
+            !handHolder.cards.Contains(card)) return false;
+        if (cachedOfferingController != null && cachedOfferingController.OfferedCount > 0)
+        {
+            ShowMessage("Return staged cards before discarding.");
+            return false;
+        }
+        if (DiscardActionsRemaining <= 0)
+        {
+            ShowMessage("Discard already used this hand.");
+            return false;
+        }
+        if (pendingDiscardCards.Contains(card))
+        {
+            pendingDiscardCards.Remove(card);
+            card.GetComponentInParent<Card3DInteractable>(true)?.PunchSwap(-1f);
+            RefreshOfferingHUD();
+            return true;
+        }
+        if (card.isDecayed || card.decayLevel > 0)
+        {
+            ShowMessage("Decayed or rotten cards cannot be discarded.");
+            return false;
+        }
+        if (CardsRemainingInDrawPile < 3)
+        {
+            ShowMessage("You need 3 cards left in the deck to discard 3.");
+            return false;
+        }
+
+        pendingDiscardCards.Add(card);
+        card.GetComponentInParent<Card3DInteractable>(true)?.PunchSwap(1f);
+        if (pendingDiscardCards.Count == 3)
+        {
+            List<Card> batch = new List<Card>(pendingDiscardCards);
+            pendingDiscardCards.Clear();
+            // Recheck all three before mutating any card data. Keep this atomic.
+            if (batch.Any(c => c == null || c.isDecayed || c.decayLevel > 0 ||
+                !handHolder.cards.Contains(c)) || CardsRemainingInDrawPile < 3)
+            {
+                ShowMessage("Discard canceled: a marked card changed.");
+                RefreshOfferingHUD();
+                return false;
+            }
+            foreach (Card chosen in batch)
+            {
+                discardPile.Add((chosen.cardValue, chosen.cardSuit));
+                chosen.Deselect();
+            }
+            foreach (Card chosen in batch)
+                TryAssignNextCard(chosen); // Refreshes the Card3DView and pips.
+            discardsUsedThisHand++;
+            deckVisual?.OnCardDiscarded();
+            ShowMessage("Discarded 3 cards. Drew 3 replacements.");
+        }
         RefreshOfferingHUD();
         return true;
+    }
+
+    public void RemoveDiscardMark(Card card)
+    {
+        if (card != null && pendingDiscardCards.Remove(card))
+            RefreshOfferingHUD();
+    }
+
+    private void ResetHandDiscardState()
+    {
+        pendingDiscardCards.Clear();
+        discardsUsedThisHand = 0;
     }
     // Attach/update the effect on a currently drawn card. The current deck uses
     // value/suit identities; duplicate cards with different effects will need
@@ -733,6 +812,7 @@ public class GameManager : MonoBehaviour
         }
         enemyTelegraph?.ClearTelegraph();
         roundNumber++;
+        ResetHandDiscardState();
         FindFirstObjectByType<ShopWindowInteractable>()?.InvalidateStockForNextVisit();
         stageNumber = Mathf.Clamp(roundNumber, 1, 8);
         handsLeft   = maxHands;
@@ -851,6 +931,7 @@ public class GameManager : MonoBehaviour
     private IEnumerator PlayRoutine()
     {
         isAnimating = true;
+        pendingDiscardCards.Clear();
         List<Card> toPlay = new List<Card>(selectedCards);
         selectedCards.Clear();
         handsLeft = Mathf.Max(0, handsLeft - 1);
@@ -911,6 +992,7 @@ public class GameManager : MonoBehaviour
         UpdateHUD();
         deckVisual?.UpdateCounts(currentDeck.Count - deckIndex, 0);
         enemyTelegraph?.RollNextTelegraph();
+        ResetHandDiscardState();
         isAnimating = false;
     }
     // ── Play (from the 3D altar / CardOfferingController) ───────────────────────
@@ -934,6 +1016,7 @@ public class GameManager : MonoBehaviour
     private IEnumerator PlayOfferedCardsRoutine(List<Card> toPlay, System.Action onComplete)
     {
         isAnimating = true;
+        pendingDiscardCards.Clear();
         deferOfferingThresholdTransition = true;
         selectedCards.Clear();
         // Capture effects before score/event callbacks can change the card data.
@@ -1000,6 +1083,7 @@ public class GameManager : MonoBehaviour
         if (onComplete != null && offering != null)
             yield return new WaitUntil(() => !offering.InputLocked);
         if (ShouldRefillOffering) enemyTelegraph?.RollNextTelegraph();
+        ResetHandDiscardState();
         RefreshOfferingHUD();
         isAnimating = false;
         deferOfferingThresholdTransition = false;
