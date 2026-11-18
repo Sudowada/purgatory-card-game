@@ -53,7 +53,18 @@ public class ShopRelicInterface : MonoBehaviour
     private RelicType? selected;
     private string ownershipSignature = "";
     private float displayedGold;
+    private int lastGoldValue = int.MinValue;
+    private int goldFlashDelta;
+    private float goldFlashUntil;
+    private const float GoldFlashDuration = 0.65f;
+    private float ShopScale => Mathf.Clamp(Screen.height / 1080f, 0.72f, 1.25f);
+    private Rect ShopPanelRect()
+    {
+        float scale = ShopScale;
+        return new Rect(16f * scale, 20f * scale, 310f * scale, 424f * scale);
+    }
     private GUIStyle titleStyle, bodyStyle, buttonStyle;
+    private GUIStyle sectionStyle, numberStyle, valueStyle, flashStyle, messageStyle;
     private static ShopRelicInterface active;
 
     void Awake()
@@ -62,6 +73,7 @@ public class ShopRelicInterface : MonoBehaviour
         active = this;
         if (FindFirstObjectByType<OwnedRelicHotbar>() == null) gameObject.AddComponent<OwnedRelicHotbar>();
         displayedGold = ShopManager.Instance != null ? ShopManager.Instance.playerGold : 0;
+        lastGoldValue = Mathf.RoundToInt(displayedGold);
     }
     void OnDestroy()
     {
@@ -119,7 +131,22 @@ public class ShopRelicInterface : MonoBehaviour
         foreach (var obj in ownedObjects) if (obj != null) obj.SetActive(seated && !windowOpen);
         if (windowOpen) selected = null;
         if (ShopManager.Instance != null)
-            displayedGold = Mathf.MoveTowards(displayedGold, ShopManager.Instance.playerGold, Time.unscaledDeltaTime * 30f);
+        {
+            int currentGold = ShopManager.Instance.playerGold;
+            if (lastGoldValue == int.MinValue)
+            {
+                lastGoldValue = currentGold;
+                displayedGold = currentGold;
+            }
+            else if (currentGold != lastGoldValue)
+            {
+                goldFlashDelta = currentGold - lastGoldValue;
+                goldFlashUntil = Time.unscaledTime + GoldFlashDuration;
+                lastGoldValue = currentGold;
+            }
+            float speed = Mathf.Max(40f, Mathf.Abs(currentGold - displayedGold) * 9f);
+            displayedGold = Mathf.MoveTowards(displayedGold, currentGold, speed * Time.unscaledDeltaTime);
+        }
         ShopRelicTarget previousHovered = hovered;
         hovered = null;
         Camera camera = window != null && window.playerCamera != null ? window.playerCamera : Camera.main;
@@ -158,7 +185,7 @@ public class ShopRelicInterface : MonoBehaviour
     private bool OverControl(Vector2 mouse, bool shop)
     {
         Vector2 gui = new Vector2(mouse.x, Screen.height - mouse.y);
-        return ((hovered != null || selected.HasValue) && HoverRect().Contains(gui)) || (selected.HasValue && SellRect().Contains(gui)) || (shop && (ContinueRect().Contains(gui) || RerollRect().Contains(gui) || new Rect(15, 20, 230, 335).Contains(gui)));
+        return ((hovered != null || selected.HasValue) && HoverRect().Contains(gui)) || (selected.HasValue && SellRect().Contains(gui)) || (shop && (ContinueRect().Contains(gui) || RerollRect().Contains(gui) || ShopPanelRect().Contains(gui)));
     }
     void RebuildOwned()
     {
@@ -181,47 +208,194 @@ public class ShopRelicInterface : MonoBehaviour
         return new Rect(panel.x + 20f * HoverScale, panel.yMax + 8f * HoverScale,
             panel.width - 40f * HoverScale, 36f * HoverScale);
     }
-    Rect RerollRect() => new Rect(28, 240, 205, 32);
-    Rect ContinueRect() => new Rect(28, 282, 205, 40);
-    void OnGUI()
+    Rect RerollRect()
+    {
+        Rect panel = ShopPanelRect();
+        float sc = ShopScale;
+        return new Rect(panel.x + 14f * sc, panel.y + 330f * sc, panel.width - 28f * sc, 38f * sc);
+    }
+    Rect ContinueRect()
+    {
+        Rect panel = ShopPanelRect();
+        float sc = ShopScale;
+        return new Rect(panel.x + 14f * sc, panel.y + 374f * sc, panel.width - 28f * sc, 38f * sc);
+    }
+    private void EnsureStyles()
     {
         if (titleStyle == null)
         {
-            titleStyle = new GUIStyle(GUI.skin.label) { fontSize = 22, wordWrap = true };
-            bodyStyle = new GUIStyle(GUI.skin.label) { fontSize = 16, wordWrap = true };
-            buttonStyle = new GUIStyle(GUI.skin.button) { fontSize = 18 };
+            titleStyle = new GUIStyle(GUI.skin.label)
+                { fontStyle = FontStyle.Bold, wordWrap = true };
+            bodyStyle = new GUIStyle(GUI.skin.label) { wordWrap = true };
+            sectionStyle = new GUIStyle(GUI.skin.label)
+                { fontStyle = FontStyle.Bold };
+            numberStyle = new GUIStyle(GUI.skin.label)
+                { fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleRight };
+            valueStyle = new GUIStyle(GUI.skin.label)
+                { fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleRight };
+            flashStyle = new GUIStyle(GUI.skin.label)
+                { fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleRight };
+            messageStyle = new GUIStyle(GUI.skin.label)
+                { alignment = TextAnchor.MiddleCenter, wordWrap = true };
+            // A label-style button keeps the painted button backing visible while
+            // retaining Unity IMGUI's native click/keyboard behavior.
+            buttonStyle = new GUIStyle(GUI.skin.label)
+                { fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
         }
-        var shop = ShopManager.Instance; var system = RelicSystem.Instance;
+        float sc = ShopScale;
+        titleStyle.fontSize = Mathf.RoundToInt(18f * sc);
+        bodyStyle.fontSize = Mathf.RoundToInt(16f * sc);
+        sectionStyle.fontSize = Mathf.RoundToInt(14f * sc);
+        numberStyle.fontSize = Mathf.RoundToInt(37f * sc);
+        valueStyle.fontSize = Mathf.RoundToInt(16f * sc);
+        flashStyle.fontSize = Mathf.RoundToInt(14f * sc);
+        messageStyle.fontSize = Mathf.RoundToInt(17f * sc);
+        buttonStyle.fontSize = Mathf.RoundToInt(17f * sc);
+        titleStyle.normal.textColor = ShopUITheme.Brass;
+        bodyStyle.normal.textColor = ShopUITheme.Ivory;
+        sectionStyle.normal.textColor = ShopUITheme.Muted;
+        numberStyle.normal.textColor = ShopUITheme.Gold;
+        valueStyle.normal.textColor = ShopUITheme.Ivory;
+        messageStyle.normal.textColor = ShopUITheme.Ivory;
+        buttonStyle.normal.textColor = ShopUITheme.Ivory;
+        buttonStyle.hover.textColor = Color.white;
+        buttonStyle.active.textColor = ShopUITheme.Gold;
+        buttonStyle.focused.textColor = ShopUITheme.Ivory;
+    }
+
+    private bool DrawShopButton(Rect area, string content, bool enabled, bool primary)
+    {
+        ShopUITheme.ButtonBackground(area, enabled, area.Contains(Event.current.mousePosition), primary);
+        bool old = GUI.enabled;
+        GUI.enabled = enabled;
+        bool clicked = GUI.Button(area, content, buttonStyle);
+        GUI.enabled = old;
+        return clicked;
+    }
+
+    private void DrawGoldCard(Rect area, float scale)
+    {
+        ShopUITheme.Cell(area);
+        float flash = Mathf.Clamp01((goldFlashUntil - Time.unscaledTime) / GoldFlashDuration);
+        if (flash > 0f)
+            ShopUITheme.Fill(new Rect(area.x + 2f, area.y + 2f, area.width - 4f, area.height - 4f),
+                new Color(0.95f, 0.77f, 0.36f, flash * 0.18f));
+
+        sectionStyle.normal.textColor = ShopUITheme.Ivory;
+        GUI.Label(new Rect(area.x + 12f * scale, area.y + 7f * scale, area.width - 24f * scale, 19f * scale),
+            "GOLD", sectionStyle);
+        sectionStyle.normal.textColor = ShopUITheme.Muted;
+
+        string shownGold = Mathf.RoundToInt(displayedGold).ToString("N0");
+        numberStyle.fontSize = Mathf.RoundToInt((shownGold.Length > 9 ? 25f :
+            shownGold.Length > 7 ? 30f : 37f) * scale);
+        numberStyle.normal.textColor = Color.Lerp(ShopUITheme.Gold, Color.white, flash * 0.55f);
+        GUI.Label(new Rect(area.x + 12f * scale, area.y + 27f * scale, area.width - 24f * scale, 42f * scale),
+            shownGold + " G", numberStyle);
+        if (flash > 0f && goldFlashDelta != 0)
+        {
+            flashStyle.normal.textColor = goldFlashDelta > 0
+                ? ShopUITheme.Gold : new Color(0.98f, 0.55f, 0.38f);
+            GUI.Label(new Rect(area.x + 100f * scale, area.y + 5f * scale,
+                area.width - 115f * scale, 20f * scale),
+                (goldFlashDelta > 0 ? "+" : "") + goldFlashDelta + " G", flashStyle);
+        }
+    }
+
+    private void DrawEarningsRow(Rect rect, string title, int amount, bool highlight = false)
+    {
+        bodyStyle.normal.textColor = highlight ? ShopUITheme.Ivory : ShopUITheme.Muted;
+        GUI.Label(rect, title, bodyStyle);
+        valueStyle.normal.textColor = highlight ? ShopUITheme.Gold : ShopUITheme.Ivory;
+        GUI.Label(rect, "+" + amount.ToString("N0") + " G", valueStyle);
+        bodyStyle.normal.textColor = ShopUITheme.Ivory;
+    }
+
+    private void DrawShopSummary(ShopManager shop, RelicSystem system, ShopWindowInteractable window)
+    {
+        Rect panel = ShopPanelRect();
+        float sc = ShopScale;
+        ShopUITheme.Frame(panel);
+        GUI.Label(new Rect(panel.x + 14f * sc, panel.y + 10f * sc,
+            panel.width - 28f * sc, 30f * sc), "TRADER'S WINDOW", titleStyle);
+
+        DrawGoldCard(new Rect(panel.x + 14f * sc, panel.y + 48f * sc,
+            panel.width - 28f * sc, 79f * sc), sc);
+
+        Rect earnings = new Rect(panel.x + 14f * sc, panel.y + 140f * sc,
+            panel.width - 28f * sc, 153f * sc);
+        ShopUITheme.Cell(earnings);
+        GUI.Label(new Rect(earnings.x + 12f * sc, earnings.y + 7f * sc,
+            earnings.width - 24f * sc, 21f * sc), "ROUND EARNINGS", sectionStyle);
+        float rowX = earnings.x + 12f * sc;
+        float rowW = earnings.width - 24f * sc;
+        DrawEarningsRow(new Rect(rowX, earnings.y + 32f * sc, rowW, 23f * sc),
+            "Base", shop.LastBaseGold);
+        DrawEarningsRow(new Rect(rowX, earnings.y + 55f * sc, rowW, 23f * sc),
+            "Over target", shop.LastScoreGold);
+        DrawEarningsRow(new Rect(rowX, earnings.y + 78f * sc, rowW, 23f * sc),
+            "Interest", shop.LastInterestGold);
+        ShopUITheme.Fill(new Rect(rowX, earnings.y + 108f * sc, rowW, 1f * sc), ShopUITheme.Outline);
+        DrawEarningsRow(new Rect(rowX, earnings.y + 113f * sc, rowW, 28f * sc),
+            "TOTAL EARNED", shop.LastAwardedGold, true);
+
+        bodyStyle.normal.textColor = ShopUITheme.Muted;
+        GUI.Label(new Rect(panel.x + 16f * sc, panel.y + 299f * sc,
+            panel.width - 32f * sc, 24f * sc),
+            "RELICS  " + system.activeRelics.Count + " / " + system.RelicCapacity, bodyStyle);
+        bodyStyle.normal.textColor = ShopUITheme.Ivory;
+
+        bool canReroll = window.CanInteract && shop.playerGold >= window.RerollCost;
+        string rerollText = window.RerollCost == 0 ? "REROLL  ·  FREE"
+            : "REROLL  ·  " + window.RerollCost + " G";
+        if (DrawShopButton(RerollRect(), rerollText, canReroll, false))
+            window.RerollDisplayedRelics();
+        if (DrawShopButton(ContinueRect(), "CONTINUE", window.CanInteract, true))
+            window.ContinueRun();
+    }
+
+    private void DrawGameplayGold()
+    {
+        // The score panel occupies top-left; use top-right for a compact balance.
+        float sc = ShopScale;
+        Rect badge = new Rect(Screen.width - 231f * sc, 20f * sc, 215f * sc, 80f * sc);
+        ShopUITheme.Frame(badge);
+        DrawGoldCard(new Rect(badge.x + 5f * sc, badge.y + 5f * sc,
+            badge.width - 10f * sc, badge.height - 10f * sc), sc);
+    }
+
+    void OnGUI()
+    {
+        var shop = ShopManager.Instance;
+        var system = RelicSystem.Instance;
         if (shop == null || system == null) return;
         var window = FindFirstObjectByType<ShopWindowInteractable>();
         bool open = window != null && window.IsOpen;
-        bool seated = GameStateManager.Instance == null || GameStateManager.Instance.CurrentState == GameState.CardGame;
+        bool seated = GameStateManager.Instance == null ||
+            GameStateManager.Instance.CurrentState == GameState.CardGame;
         if ((!open && !seated) || OwnedRelicHotbar.Inspecting) return;
-        if (open)
-        {
-            GUI.Box(new Rect(15, 20, 230, 335), "");
-            GUI.Label(new Rect(28, 30, 210, 35), "GOLD  " + Mathf.RoundToInt(displayedGold), titleStyle);
-            GUI.Label(new Rect(28, 75, 205, 150), $"Round earnings\nBase: +{shop.LastBaseGold}\nScore bonus: +{shop.LastScoreGold}\nInterest: +{shop.LastInterestGold}\nTotal earned: +{shop.LastAwardedGold}\nRelics: {system.activeRelics.Count}/{system.RelicCapacity}", bodyStyle);
-            bool before = GUI.enabled;
-            GUI.enabled = window.CanInteract;
-            if (GUI.Button(ContinueRect(), "Continue", buttonStyle)) window.ContinueRun();
-            GUI.enabled = window.CanInteract && shop.playerGold >= window.RerollCost;
-            if (GUI.Button(RerollRect(), $"Reroll: {window.RerollCost}g", buttonStyle)) window.RerollDisplayedRelics();
-            GUI.enabled = before;
-        }
+
+        EnsureStyles();
+        if (open) DrawShopSummary(shop, system, window);
+        else DrawGameplayGold();
+
         Relic detail = hovered != null ? hovered.relic : null;
-        if (selected.HasValue) detail = system.activeRelics.Find(r => r.type == selected.Value);
+        if (selected.HasValue)
+            detail = system.activeRelics.Find(r => r.type == selected.Value);
         if (detail != null)
         {
             if (hoverTitleStyle == null)
             {
                 hoverTitleStyle = new GUIStyle(GUI.skin.label)
                     { wordWrap = true, fontStyle = FontStyle.Bold };
-                hoverEffectStyle = new GUIStyle(GUI.skin.label) { wordWrap = true };
+                hoverEffectStyle = new GUIStyle(GUI.skin.label)
+                    { wordWrap = true };
             }
             float scale = HoverScale;
             hoverTitleStyle.fontSize = Mathf.RoundToInt(hoverTitleFontSize * scale);
             hoverEffectStyle.fontSize = Mathf.RoundToInt(hoverEffectFontSize * scale);
+            hoverTitleStyle.normal.textColor = ShopUITheme.Brass;
+            hoverEffectStyle.normal.textColor = ShopUITheme.Ivory;
             float padding = 20f * scale;
             Rect panel = HoverRect();
             float textWidth = panel.width - padding * 2f;
@@ -229,7 +403,7 @@ public class ShopRelicInterface : MonoBehaviour
             float effectHeight = hoverEffectStyle.CalcHeight(new GUIContent(detail.description), textWidth);
             hoverContentHeight = padding * 2f + titleHeight + 12f * scale + effectHeight;
             panel = HoverRect();
-            GUI.Box(panel, "");
+            ShopUITheme.Frame(panel);
             GUI.Label(new Rect(panel.x + padding, panel.y + padding, textWidth, titleHeight),
                 detail.displayName, hoverTitleStyle);
             GUI.Label(new Rect(panel.x + padding, panel.y + padding + titleHeight + 12f * scale,
@@ -239,14 +413,28 @@ public class ShopRelicInterface : MonoBehaviour
         {
             var gm = GameManager.Instance;
             var offering = FindFirstObjectByType<CardOfferingController>();
-            bool safe = (window == null || !window.IsBusy) && (gm == null || ((gm.IsShopOpen || (open && window.CanInteract) || (!open && gm.CanPlayOffering)) && (offering == null || offering.OfferedCount == 0)));
-            bool before = GUI.enabled; GUI.enabled = safe;
-            if (GUI.Button(SellRect(), $"Sell selected relic for {shop.GetRelicSaleValue(selected.Value)} gold", buttonStyle))
-            { bool sold = shop.TrySellRelic(selected.Value, out string reason); Message = reason; if (sold) selected = null; }
-            GUI.enabled = before;
+            bool safe = (window == null || !window.IsBusy) &&
+                (gm == null || ((gm.IsShopOpen || (open && window.CanInteract) ||
+                (!open && gm.CanPlayOffering)) &&
+                (offering == null || offering.OfferedCount == 0)));
+            if (DrawShopButton(SellRect(),
+                "SELL RELIC  ·  +" + shop.GetRelicSaleValue(selected.Value) + " G", safe, false))
+            {
+                bool sold = shop.TrySellRelic(selected.Value, out string reason);
+                Message = reason;
+                if (sold) selected = null;
+            }
         }
-        GUI.Label(new Rect(Screen.width * 0.28f, Screen.height - 40, Screen.width * 0.44f, 35), Message, bodyStyle);
+
+        if (!string.IsNullOrEmpty(Message))
+        {
+            Rect messageArea = new Rect(Screen.width * 0.28f,
+                Screen.height - 50f * ShopScale, Screen.width * 0.44f, 38f * ShopScale);
+            ShopUITheme.Frame(messageArea);
+            GUI.Label(messageArea, Message, messageStyle);
+        }
     }
+
 }
 
 public class ShopPriceLabelOwner : MonoBehaviour
