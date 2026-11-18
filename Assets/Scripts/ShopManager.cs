@@ -226,8 +226,13 @@ public class ShopManager : MonoBehaviour
     public void AwardGold(int scoreThisRound, int threshold)
     {
         RecordClearedEncounter();
-        int excess  = Mathf.Max(0, scoreThisRound - threshold);
-        int bonus   = excess / 10;
+        // 1 bonus gold for each COMPLETE 10% over the target, capped at +10.
+        // e.g. target=100: 109=>0, 110=>1, 130=>3, 150=>5, 200=>10.
+        // Use integer arithmetic to avoid floating-point boundary errors.
+        long excess = System.Math.Max(0L, (long)scoreThisRound - threshold);
+        int bonus = threshold > 0
+            ? (int)System.Math.Min(10L, excess * 10L / threshold)
+            : 0;
         // Interest: +1 gold per 5 held, applied before adding base
         int interest = playerGold / 5;
         int awarded = baseGoldPerRound + bonus + interest;
