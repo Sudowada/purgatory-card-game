@@ -364,10 +364,10 @@ public class RelicSystem : MonoBehaviour
                 addMult += 2f;
             if (HasRelic(RelicType.ThreeKnocks) &&
                 cards.GroupBy(c => c.cardValue).Any(g => g.Count() >= 3))
-                addMult += 5f;
+                addMult += 4f;
             if (HasRelic(RelicType.UniformThread) && cards.Count >= 3 &&
                 cards.All(c => c.cardSuit == cards[0].cardSuit))
-                addMult += 6f;
+                addMult += 5f;
         }
         // Turn Investor: dynamic +Mult from gold HELD, not spent or earned
         // lifetime gold. Uncapped, recalculated for both preview and scoring.
@@ -510,10 +510,10 @@ public class RelicSystem : MonoBehaviour
             "Twin Teeth", "Playing at least one Pair grants +2 Mult once per offer.",
             "No two teeth were ever the same."),
         RelicType.ThreeKnocks => new Relic(type, RelicCategory.ComboEngine,
-            "Three Knocks", "Playing at least Three of a Kind grants +5 Mult once per offer.",
+            "Three Knocks", "Three of a Kind grants +4 Mult per offer; stacks with Twin Teeth (+2).",
             "Something answers the third knock."),
         RelicType.UniformThread => new Relic(type, RelicCategory.ComboEngine,
-            "Uniform Thread", "Offering 3 or more cards all of one suit grants +6 Mult.",
+            "Uniform Thread", "Offering 3 or more cards all of one suit grants +5 Mult.",
             "No one wore their own clothes here."),
         RelicType.FourthHand      => new Relic(type, RelicCategory.RuleChanger,       "Fourth Hand",      "Play up to 4 cards per turn.",                                        "More hands, more suffering."),
         RelicType.DuelistsCode    => new Relic(type, RelicCategory.RuleChanger,       "Duelist's Code",   "Can offer only 1 card per hand. Gain x3 xMult on that card.",                        "One blow, decisive."),
