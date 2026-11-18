@@ -400,15 +400,18 @@ public class ShopRelicInterface : MonoBehaviour
             float padding = 20f * scale;
             Rect panel = HoverRect();
             float textWidth = panel.width - padding * 2f;
+            string description = detail.description;
+            if (detail.type == RelicType.PokerChip && shop != null)
+                description += $"\nCURRENT HEADS CHANCE: {shop.PokerChipWinChance:P0}  (LUCK {shop.luck})";
             float titleHeight = hoverTitleStyle.CalcHeight(new GUIContent(detail.displayName), textWidth);
-            float effectHeight = hoverEffectStyle.CalcHeight(new GUIContent(detail.description), textWidth);
+            float effectHeight = hoverEffectStyle.CalcHeight(new GUIContent(description), textWidth);
             hoverContentHeight = padding * 2f + titleHeight + 12f * scale + effectHeight;
             panel = HoverRect();
             ShopUITheme.Frame(panel);
             GUI.Label(new Rect(panel.x + padding, panel.y + padding, textWidth, titleHeight),
                 detail.displayName, hoverTitleStyle);
             GUI.Label(new Rect(panel.x + padding, panel.y + padding + titleHeight + 12f * scale,
-                textWidth, effectHeight), detail.description, hoverEffectStyle);
+                textWidth, effectHeight), description, hoverEffectStyle);
         }
         if (selected.HasValue && system.HasRelic(selected.Value))
         {
