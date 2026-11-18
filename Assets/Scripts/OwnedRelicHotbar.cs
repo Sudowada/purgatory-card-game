@@ -8,7 +8,7 @@ public class OwnedRelicHotbar : MonoBehaviour
     [Range(0, 31)] public int previewLayer = 31;
     [Range(64, 512)] public int previewResolution = 256;
     public float spinSpeed = 12f;
-    public Color panelColor = new Color(0.08f, 0.10f, 0.13f, 1f);
+    public Color panelColor = new Color(0.055f, 0.060f, 0.075f, 0.94f);
     public static OwnedRelicHotbar Instance { get; private set; }
     public static bool Inspecting => Instance != null && Instance.ShopOpen && Instance.selected.HasValue;
     public static bool BlocksWorldInput
@@ -161,14 +161,21 @@ public class OwnedRelicHotbar : MonoBehaviour
         if (!ShopOpen || ShopManager.Instance == null || RelicSystem.Instance == null) return;
         if (title == null)
         {
-            title = new GUIStyle(GUI.skin.label) { fontSize = 23, wordWrap = true };
+            title = new GUIStyle(GUI.skin.label)
+                { fontSize = 23, wordWrap = true, fontStyle = FontStyle.Bold };
+            title.normal.textColor = ShopUITheme.Brass;
             body = new GUIStyle(GUI.skin.label) { fontSize = 17, wordWrap = true };
-            button = new GUIStyle(GUI.skin.button) { fontSize = 18 };
+            body.normal.textColor = ShopUITheme.Ivory;
+            button = new GUIStyle(GUI.skin.label)
+                { fontSize = 18, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
+            button.normal.textColor = ShopUITheme.Ivory;
+            button.hover.textColor = Color.white;
+            button.active.textColor = ShopUITheme.Gold;
         }
         Matrix4x4 oldMatrix = GUI.matrix;
         GUI.matrix = Matrix4x4.Scale(Vector3.one * Scale);
         Rect bar = BarRect;
-        GUI.Box(bar, "");
+        ShopUITheme.Frame(bar);
         GUI.Label(new Rect(bar.x + 12, bar.y + 6, bar.width - 24, 28),
             $"OWNED RELICS  {RelicSystem.Instance.activeRelics.Count}/{RelicSystem.Instance.RelicCapacity}", body);
         Relic hover = null;
@@ -176,7 +183,7 @@ public class OwnedRelicHotbar : MonoBehaviour
         for (int i = 0; i < RelicSystem.Instance.RelicCapacity; i++)
         {
             Rect slot = new Rect(bar.x + 12 + i * 90f, bar.y + 36, 82, 76);
-            GUI.Box(slot, "");
+            ShopUITheme.Cell(slot);
             if (i >= previews.Count) continue;
             Preview preview = previews[i];
             if (preview.texture != null) GUI.DrawTexture(slot, preview.texture, ScaleMode.ScaleToFit, false);
@@ -196,7 +203,7 @@ public class OwnedRelicHotbar : MonoBehaviour
         if (hover != null && !selected.HasValue)
         {
             Rect tooltip = new Rect(bar.x, bar.y - 130, bar.width, 118);
-            GUI.Box(tooltip, "");
+            ShopUITheme.Frame(tooltip);
             GUI.Label(new Rect(tooltip.x + 12, tooltip.y + 8, tooltip.width - 24, 30), hover.displayName, title);
             GUI.Label(new Rect(tooltip.x + 12, tooltip.y + 43, tooltip.width - 24, 65), hover.description, body);
         }
@@ -212,7 +219,7 @@ public class OwnedRelicHotbar : MonoBehaviour
         GUI.DrawTexture(new Rect(0, 0, Width, Height), Texture2D.whiteTexture);
         GUI.color = previous;
         Rect panel = new Rect((Width - 650) * 0.5f, (Height - 500) * 0.5f, 650, 500);
-        GUI.Box(panel, "");
+        ShopUITheme.Frame(panel);
         GUI.Label(new Rect(panel.x + 24, panel.y + 18, 540, 42), preview.relic.displayName, title);
         if (GUI.Button(new Rect(panel.x + 590, panel.y + 16, 40, 35), "X", button)) selected = null;
         GUI.DrawTexture(new Rect(panel.x + 24, panel.y + 80, 290, 290), preview.texture, ScaleMode.ScaleToFit, false);
@@ -220,8 +227,11 @@ public class OwnedRelicHotbar : MonoBehaviour
         GUI.Label(new Rect(panel.x + 24, panel.y + 385, 590, 30), "Selling removes this relic's effects and frees its slot.", body);
         bool enabled = GUI.enabled;
         GUI.enabled = window.CanInteract;
-        if (GUI.Button(new Rect(panel.x + 130, panel.y + 432, 390, 44),
-            $"Sell for {ShopManager.Instance.GetRelicSaleValue(preview.relic.type)} gold", button))
+        Rect sellRect = new Rect(panel.x + 130, panel.y + 432, 390, 44);
+        ShopUITheme.ButtonBackground(sellRect, window.CanInteract,
+            sellRect.Contains(Event.current.mousePosition), true);
+        if (GUI.Button(sellRect,
+            "SELL RELIC  ·  +" + ShopManager.Instance.GetRelicSaleValue(preview.relic.type) + " G", button))
         {
             bool sold = ShopManager.Instance.TrySellRelic(preview.relic.type, out string reason);
             ShopRelicInterface.Message = reason;
