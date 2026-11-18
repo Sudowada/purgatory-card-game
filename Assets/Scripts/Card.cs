@@ -21,7 +21,9 @@ public class Card : MonoBehaviour
     // bonus here also updates the live PointValue text on 3D cards.
     public int PointValue => Mathf.Max(0,
         15 - cardValue + (RelicSystem.Instance != null
-            ? RelicSystem.Instance.GetSuitPointBonus(cardSuit) : 0)
+            ? RelicSystem.Instance.GetSuitPointBonus(cardSuit)
+              + RelicSystem.Instance.GetRankPointBonus(cardValue)
+            : 0)
         - pointDamageTaken);
     [HideInInspector] public int pointDamageTaken;
     public void ApplyPointDamage(int amount) => pointDamageTaken += Mathf.Max(0, amount);
