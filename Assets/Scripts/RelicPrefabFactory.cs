@@ -128,6 +128,8 @@ public static class RelicPrefabFactory
         RelicType.DrawReactor => PrimitiveType.Cube,
         RelicType.ValueLock   => PrimitiveType.Cube,
 
+        // Secret poker chip — flat coin with a raised rim.
+        RelicType.PokerChip  => PrimitiveType.Cylinder,
         // Risk / Challenge — sphere (dangerous looking)
         RelicType.GlassCannon => PrimitiveType.Sphere,
         RelicType.DoubleDecay => PrimitiveType.Sphere,
@@ -154,6 +156,7 @@ public static class RelicPrefabFactory
         RelicType.SmallMult     => PrimitiveType.Sphere,     // small counter
         RelicType.MediumMult    => PrimitiveType.Cylinder,   // ledger dial
         RelicType.LargeMult     => PrimitiveType.Cube,       // large counter
+        RelicType.PokerChip     => PrimitiveType.Cylinder,   // raised center emblem
         RelicType.MarkedNumbers => PrimitiveType.Cylinder,   // carved number
         RelicType.FourthBell    => PrimitiveType.Sphere,     // bell clapper
         RelicType.OddEtchings   => PrimitiveType.Cube,       // uneven stamp
@@ -180,6 +183,7 @@ public static class RelicPrefabFactory
         RelicType.SmallMult       => new Vector3(0f,  0.30f, 0f),
         RelicType.MediumMult      => new Vector3(0f,  0.55f, 0f),
         RelicType.LargeMult       => new Vector3(0f,  0.65f, 0f),
+        RelicType.PokerChip       => new Vector3(0f,  0.40f, 0f),
         RelicType.MarkedNumbers   => new Vector3(0f,  0.52f, 0f),
         RelicType.FourthBell      => new Vector3(0f,  0.48f, 0f),
         RelicType.OddEtchings     => new Vector3(0.45f, 0.25f, 0f),
@@ -206,6 +210,7 @@ public static class RelicPrefabFactory
         RelicType.SmallMult       => new Vector3(0.40f, 0.23f, 0.40f),
         RelicType.MediumMult      => new Vector3(0.48f, 0.20f, 0.48f),
         RelicType.LargeMult       => new Vector3(0.45f, 0.40f, 0.45f),
+        RelicType.PokerChip       => new Vector3(0.65f, 0.16f, 0.65f),
         RelicType.MarkedNumbers   => new Vector3(0.34f, 0.30f, 0.34f),
         RelicType.FourthBell      => new Vector3(0.37f, 0.37f, 0.37f),
         RelicType.OddEtchings     => new Vector3(0.42f, 0.55f, 0.42f),
@@ -234,6 +239,7 @@ public static class RelicPrefabFactory
         RelicType.EvenMaster     => new Vector3(0.08f, 0.05f, 0.08f),
         RelicType.ComboBank      => new Vector3(0.08f, 0.05f, 0.08f),
 
+        RelicType.PokerChip => new Vector3(0.075f, 0.03f, 0.075f),
         // Default uniform scale
         _ => Vector3.one * 0.07f
     };
