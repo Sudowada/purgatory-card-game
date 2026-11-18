@@ -312,17 +312,31 @@ public class RelicSystem : MonoBehaviour
     // ─────────────────────────────────────────────────────────────────────────
     public int ApplyRelicModifiers(ComboResult result, bool consumeOneShotEffects = true)
     {
-        // Only committed non-penalty hands roll the chip. Previewing the hand
-        // must not consume randomness or rewrite last committed payout.
+        // Previewing must never roll or alter the last committed payout.
         if (consumeOneShotEffects) LastPokerChipMultiplier = 1;
-        // Penalty hands — relics don't reduce penalty except GlassCannon doubles it
+        // Negative-score offers are also a risk: a heads doubles the penalty,
+        // while tails removes it. This prevents poker-chip free immunity.
         if (result.isPenalty)
         {
             int penalty = result.penaltyAmount;
             if (HasRelic(RelicType.GlassCannon)) penalty = Mathf.RoundToInt(penalty * 2f);
             result.penaltyAmount = penalty;
-            result.finalScore = -penalty;
-            return result.finalScore;
+            int score = -penalty;
+            if (consumeOneShotEffects && HasRelic(RelicType.PokerChip))
+            {
+                float chance = ShopManager.Instance != null
+                    ? ShopManager.Instance.PokerChipWinChance : 0.5f;
+                bool heads = Random.value < chance;
+                LastPokerChipMultiplier = heads ? 2 : 0;
+                score = heads
+                    ? (int)System.Math.Max(-int.MaxValue, (long)score * 2L) : 0;
+                result.multiplicativeMult = LastPokerChipMultiplier;
+                result.description += heads
+                    ? " | POKER CHIP: HEADS x2 PENALTY"
+                    : " | POKER CHIP: TAILS 0 PENALTY";
+            }
+            result.finalScore = score;
+            return score;
         }
         var   cards   = result.scoringCards;
         float addMult = result.additiveMult;
@@ -457,7 +471,7 @@ public class RelicSystem : MonoBehaviour
             "Heads, you get another chance."),
         RelicType.PokerChip => new Relic(type, RelicCategory.RiskChallenge,
             "Poker Chip",
-            "Flip on each scoring offer: HEADS doubles the entire score; TAILS sets it to 0. Base chance 50%, +1% per Luck (max 95%).",
+            "Flip on every offer: HEADS doubles the whole score (even penalties); TAILS sets it to 0. 50% base, +1% per Luck (max 95%).",
             "Gamblers always quit before hitting it big"),
         RelicType.SpadeSeal => new Relic(type, RelicCategory.ComboEngine,
             "Spade Seal", "Each Spade card gains +15 Points while this relic is owned.",
