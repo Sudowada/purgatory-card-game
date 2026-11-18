@@ -105,9 +105,11 @@ public class EventManager : MonoBehaviour
             case "evt_lucky_trap":
                 // Any 7-7-7 outcome unlocks the slot machine ONCE,
                 // including runs with a fourth non-seven card.
-                if (firstTime)
+                var shopForSevens = ShopManager.Instance;
+                if (shopForSevens != null &&
+                    !shopForSevens.HasCollectible(ShopManager.SlotMachineCollectible))
                 {
-                    ShopManager.Instance?.AddCollectible(ShopManager.SlotMachineCollectible);
+                    shopForSevens.AddCollectible(ShopManager.SlotMachineCollectible);
                     ShowEventMessage("A slot machine joins your collectibles.", rare: true);
                 }
 
