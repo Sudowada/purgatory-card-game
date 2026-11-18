@@ -1,4 +1,5 @@
 using TMPro;
+using DG.Tweening;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -15,6 +16,42 @@ public class ScoreHUD : MonoBehaviour
     [SerializeField, Range(0f, 0.3f)] private float scoreBounce = 0.12f;
     [SerializeField, Min(0.05f)] private float feedbackDuration = 0.55f;
     [SerializeField, Min(0.05f)] private float countUpDuration = 0.45f;
+
+    [Header("Difference Tier Animation")]
+    [SerializeField, Range(0f, 0.3f)] private float tierPunchStrength = 0.12f;
+    [SerializeField, Range(0.05f, 1f)] private float tierPunchDuration = 0.30f;
+    [SerializeField, Range(0.05f, 1f)] private float tierFlashDuration = 0.25f;
+    [SerializeField, Range(1f, 20f)] private float tierFillSpeed = 8f;
+    [SerializeField, Range(0, 24)] private int maxTierSparks = 12;
+    [SerializeField] private AudioSource tierAudioSource;
+    [SerializeField] private AudioClip tierUpSound;
+
+    private static readonly Color[] TierColors =
+    {
+        new Color(0.55f, 0.06f, 0.06f), // penalty
+        new Color(0.85f, 0.35f, 0.05f), // 0-2
+        new Color(0.90f, 0.58f, 0.05f), // 3-5
+        new Color(0.88f, 0.82f, 0.08f), // 6-9
+        new Color(0.45f, 0.82f, 0.12f), // 10-14
+        new Color(0.10f, 0.78f, 0.62f), // 15-19
+        new Color(0.10f, 0.72f, 0.90f), // 20-24
+        new Color(0.20f, 0.40f, 0.95f), // 25-30
+        new Color(0.55f, 0.15f, 0.95f)  // 31+
+    };
+    private static readonly int[] TierStarts = { 0, 0, 3, 6, 10, 15, 20, 25, 31 };
+
+    private TextMeshProUGUI pointsValue;
+    private TextMeshProUGUI combinedMultValue;
+    private TextMeshProUGUI tierMultValue;
+    private TextMeshProUGUI differenceValue;
+    private TextMeshProUGUI nextTierHint;
+    private RectTransform tierTrack;
+    private Image tierFill;
+    private float tierFillDisplayed;
+    private float tierFillTarget;
+    private float tierFlashRemaining;
+    private int lastPreviewTier = -1;
+    private Color activeTierColor = TierColors[1];
 
     private float displayedScore;
     private float countFrom;
@@ -56,6 +93,8 @@ public class ScoreHUD : MonoBehaviour
 
     private void OnDestroy()
     {
+        if (tierMultValue != null) tierMultValue.rectTransform.DOKill();
+        if (tierTrack != null) tierTrack.DOKill();
         if (canvasObject != null) Destroy(canvasObject);
     }
 
@@ -114,9 +153,111 @@ public class ScoreHUD : MonoBehaviour
         if (newDetails != lastDetails) { details.text = newDetails; lastDetails = newDetails; }
         float fraction = manager.RoundTarget > 0
             ? Mathf.Clamp01(displayedScore / manager.RoundTarget) : 0f;
-        progress.rectTransform.sizeDelta = new Vector2(324f * fraction, 7f);
+        progress.rectTransform.sizeDelta = new Vector2(404f * fraction, 7f);
         progress.color = manager.RoundTarget > 0 && manager.RoundScore >= manager.RoundTarget
             ? new Color(0.45f, 0.8f, 0.55f) : new Color(0.85f, 0.66f, 0.32f);
+        RefreshScoringIngredients(manager);
+    }
+
+    private void RefreshScoringIngredients(GameManager manager)
+    {
+        if (!manager.TryGetLiveScorePreview(out ComboResult result))
+        {
+            pointsValue.text = "—";
+            combinedMultValue.text = "—";
+            tierMultValue.text = "—";
+            tierMultValue.fontSize = 25f;
+            differenceValue.text = "DIFF  —";
+            nextTierHint.text = "STAGE CARDS TO SEE DIFFERENCE TIERS";
+            activeTierColor = TierColors[1];
+            tierFillTarget = 0f;
+            lastPreviewTier = 0;
+        }
+        else
+        {
+            int tier = result.isPenalty ? 0 : Mathf.Clamp(result.diffDots, 1, 8);
+            pointsValue.text = result.points.ToString("N0");
+            combinedMultValue.text = $"×{result.additiveMult * result.multiplicativeMult:0.##}";
+            // Negative difference scores a fixed penalty; ×0.25 is not applied.
+            tierMultValue.text = result.isPenalty ? "PENALTY" : $"×{result.tierMult:0.##}";
+            tierMultValue.fontSize = result.isPenalty ? 18f : 25f;
+            differenceValue.text = result.difference >= 0
+                ? $"DIFF  +{result.difference}" : $"DIFF  {result.difference}";
+
+            nextTierHint.text = result.isPenalty
+                ? $"+{Mathf.Abs(result.difference)} TO ESCAPE PENALTY"
+                : result.nextTierAt > 0
+                    ? $"+{result.nextTierAt} DIFFERENCE TO ×{result.nextTierMult:0.##}"
+                    : "MAX DIFFERENCE TIER";
+
+            activeTierColor = TierColors[tier];
+            if (tier == 0) tierFillTarget = 0f;
+            else if (result.nextTierAt < 0) tierFillTarget = 1f;
+            else
+            {
+                int start = TierStarts[tier];
+                int next = result.difference + result.nextTierAt;
+                tierFillTarget = Mathf.Clamp01(
+                    (float)(result.difference - start) / Mathf.Max(1, next - start));
+            }
+
+            if (lastPreviewTier >= 0 && tier > lastPreviewTier)
+                CelebrateTier(tier);
+            lastPreviewTier = tier;
+        }
+
+        float blend = 1f - Mathf.Exp(-tierFillSpeed * Time.unscaledDeltaTime);
+        tierFillDisplayed = Mathf.Lerp(tierFillDisplayed, tierFillTarget, blend);
+        if (Mathf.Abs(tierFillDisplayed - tierFillTarget) < 0.002f)
+            tierFillDisplayed = tierFillTarget;
+        tierFill.rectTransform.sizeDelta = new Vector2(404f * tierFillDisplayed, 12f);
+
+        float flash = tierFlashDuration > 0f
+            ? Mathf.Clamp01(tierFlashRemaining / tierFlashDuration) : 0f;
+        tierFill.color = Color.Lerp(activeTierColor, Color.white, flash * 0.75f);
+        tierMultValue.color = Color.Lerp(activeTierColor, Color.white, flash * 0.65f);
+        tierFlashRemaining = Mathf.Max(0f, tierFlashRemaining - Time.unscaledDeltaTime);
+    }
+
+    private void CelebrateTier(int tier)
+    {
+        float intensity = Mathf.Clamp01((tier - 1f) / 7f);
+        tierFlashRemaining = tierFlashDuration;
+        RectTransform value = tierMultValue.rectTransform;
+        value.DOKill(false);
+        value.localScale = Vector3.one;
+        value.DOPunchScale(Vector3.one * tierPunchStrength * (1f + intensity * 1.8f),
+            tierPunchDuration, 7 + tier, 0.45f).SetUpdate(true);
+        if (tierUpSound != null)
+        {
+            if (tierAudioSource != null) tierAudioSource.PlayOneShot(tierUpSound, 0.4f + 0.6f * intensity);
+            else AudioSource.PlayClipAtPoint(tierUpSound, Vector3.zero, 0.4f + 0.6f * intensity);
+        }
+        int sparkCount = Mathf.RoundToInt(maxTierSparks * (0.3f + 0.7f * intensity));
+        for (int i = 0; i < sparkCount; i++)
+            SpawnTierSpark(intensity);
+    }
+
+    private void SpawnTierSpark(float intensity)
+    {
+        var spark = new GameObject("Tier Pixel Spark", typeof(RectTransform), typeof(Image));
+        var rt = spark.GetComponent<RectTransform>();
+        rt.SetParent(tierTrack, false);
+        rt.anchorMin = rt.anchorMax = rt.pivot = new Vector2(0f, 1f);
+        float size = Random.Range(3f, 6f);
+        rt.sizeDelta = new Vector2(size, size);
+        Vector2 origin = new Vector2(404f * tierFillTarget, -6f);
+        rt.anchoredPosition = origin;
+        Image image = spark.GetComponent<Image>();
+        image.raycastTarget = false;
+        image.color = Color.Lerp(activeTierColor, Color.white, 0.45f);
+        float angle = Random.Range(0f, Mathf.PI * 2f);
+        float radius = Random.Range(12f, 30f + 30f * intensity);
+        var seq = DOTween.Sequence().SetUpdate(true);
+        seq.Join(rt.DOAnchorPos(origin + new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) * radius,
+            0.24f + 0.12f * intensity));
+        seq.Join(image.DOFade(0f, 0.30f + 0.12f * intensity));
+        seq.OnComplete(() => { if (spark != null) Destroy(spark); });
     }
 
     private void AnimateScoreDigits()
@@ -165,20 +306,53 @@ public class ScoreHUD : MonoBehaviour
         group.interactable = false;
         group.blocksRaycasts = false;
 
-        RectTransform panel = CreateRect("Score Panel", canvasObject.transform, position, new Vector2(360f, 190f));
+        RectTransform panel = CreateRect("Score Panel", canvasObject.transform, position, new Vector2(440f, 400f));
         Image background = panel.gameObject.AddComponent<Image>();
         background.color = new Color(0.055f, 0.06f, 0.075f, 0.92f);
         background.raycastTarget = false;
-        heading = CreateText("Round", panel, new Vector2(18f, -14f), new Vector2(324f, 25f), 19f, new Color(0.85f, 0.66f, 0.32f));
-        score = CreateText("Score", panel, new Vector2(18f, -43f), new Vector2(324f, 48f), 38f, Color.white);
-        RectTransform track = CreateRect("Progress Track", panel, new Vector2(18f, -101f), new Vector2(324f, 7f));
+        heading = CreateText("Round", panel, new Vector2(18f, -14f), new Vector2(404f, 25f), 19f, new Color(0.85f, 0.66f, 0.32f));
+        score = CreateText("Score", panel, new Vector2(18f, -43f), new Vector2(404f, 48f), 38f, Color.white);
+        RectTransform track = CreateRect("Progress Track", panel, new Vector2(18f, -101f), new Vector2(404f, 7f));
         Image trackImage = track.gameObject.AddComponent<Image>();
         trackImage.color = new Color(1f, 1f, 1f, 0.12f);
         trackImage.raycastTarget = false;
-        RectTransform fill = CreateRect("Progress Fill", track, Vector2.zero, new Vector2(324f, 7f));
+        RectTransform fill = CreateRect("Progress Fill", track, Vector2.zero, new Vector2(404f, 7f));
         progress = fill.gameObject.AddComponent<Image>();
         progress.raycastTarget = false;
-        details = CreateText("Details", panel, new Vector2(18f, -123f), new Vector2(324f, 53f), 17f, new Color(0.76f, 0.75f, 0.71f));
+        details = CreateText("Details", panel, new Vector2(18f, -123f), new Vector2(404f, 53f), 16f, new Color(0.76f, 0.75f, 0.71f));
+        CreateText("Offering Subtitle", panel, new Vector2(18f, -192f),
+            new Vector2(404f, 20f), 16f, new Color(0.85f, 0.66f, 0.32f)).text = "OFFER SCORE";
+
+        pointsValue = CreateIngredient(panel, "POINTS", 18f);
+        combinedMultValue = CreateIngredient(panel, "MULT", 156f);
+        tierMultValue = CreateIngredient(panel, "TIER MULT", 294f);
+
+        differenceValue = CreateText("Difference", panel, new Vector2(18f, -308f),
+            new Vector2(404f, 30f), 22f, Color.white);
+        tierTrack = CreateRect("Difference Tier Track", panel,
+            new Vector2(18f, -345f), new Vector2(404f, 12f));
+        var tierTrackImage = tierTrack.gameObject.AddComponent<Image>();
+        tierTrackImage.color = new Color(1f, 1f, 1f, 0.14f);
+        tierTrackImage.raycastTarget = false;
+        RectTransform tierFillRect = CreateRect("Difference Tier Fill", tierTrack, Vector2.zero, new Vector2(0f, 12f));
+        tierFill = tierFillRect.gameObject.AddComponent<Image>();
+        tierFill.color = TierColors[1];
+        tierFill.raycastTarget = false;
+        nextTierHint = CreateText("Next Difference Tier", panel, new Vector2(18f, -366f),
+            new Vector2(404f, 24f), 16f, new Color(0.77f, 0.75f, 0.68f));
+    }
+
+    private static TextMeshProUGUI CreateIngredient(Transform parent, string name, float x)
+    {
+        RectTransform panel = CreateRect(name + " Panel", parent, new Vector2(x, -221f),
+            new Vector2(126f, 72f));
+        Image background = panel.gameObject.AddComponent<Image>();
+        background.color = new Color(0.14f, 0.15f, 0.16f, 1f);
+        background.raycastTarget = false;
+        CreateText(name + " Label", panel, new Vector2(8f, -8f),
+            new Vector2(110f, 18f), 14f, new Color(0.68f, 0.66f, 0.62f)).text = name;
+        return CreateText(name + " Value", panel, new Vector2(8f, -30f),
+            new Vector2(110f, 34f), 25f, Color.white);
     }
 
     private static RectTransform CreateRect(string name, Transform parent, Vector2 offset, Vector2 size)
