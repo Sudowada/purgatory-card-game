@@ -40,7 +40,12 @@ public sealed class RandomEnemyTelegraph : MonoBehaviour
                 eligible.Add(physical);
         }
         // Snapshot recipients AND amounts before staging can reorder or recycle slots.
-        int count = Mathf.Min(CurrentAttack == EnemyAttackKind.Plague ? 3 : targetsPerAttack, eligible.Count);
+        // Double Decay amplifies every telegraph, including Plague/Flank and
+        // the pattern-based attacks (Spread, Fester, Wither).
+        bool extraTarget = RelicSystem.Instance != null &&
+            RelicSystem.Instance.HasRelic(RelicType.DoubleDecay);
+        int baseCount = CurrentAttack == EnemyAttackKind.Plague ? 3 : targetsPerAttack;
+        int count = Mathf.Min(baseCount + (extraTarget ? 1 : 0), eligible.Count);
         if (CurrentAttack != EnemyAttackKind.PointValue && RelicSystem.Instance != null && RelicSystem.Instance.GetDecayAll())
         {
             foreach (var physical in eligible) Announce(physical);
@@ -50,6 +55,7 @@ public sealed class RandomEnemyTelegraph : MonoBehaviour
         {
             if (eligible.Count > 0) Announce(eligible[0]);
             if (eligible.Count > 1) Announce(eligible[eligible.Count - 1]);
+            if (extraTarget) AnnounceOneExtraUntargeted(eligible);
             return;
         }
         if (CurrentAttack == EnemyAttackKind.Spread || CurrentAttack == EnemyAttackKind.Fester || CurrentAttack == EnemyAttackKind.Wither)
@@ -64,6 +70,7 @@ public sealed class RandomEnemyTelegraph : MonoBehaviour
                 if (i > 0) Announce(eligible[i - 1]);
                 if (i + 1 < eligible.Count) Announce(eligible[i + 1]);
             }
+            if (extraTarget) AnnounceOneExtraUntargeted(eligible);
             return;
         }
         for (int i = 0; i < count; i++)
@@ -75,13 +82,31 @@ public sealed class RandomEnemyTelegraph : MonoBehaviour
         }
     }
 
-    private void Announce(Card3DInteractable physical)
+    /// <summary>Choose exactly one additional, previously untargeted card when
+    /// possible. Pattern attacks that already hit everyone cannot add a target.</summary>
+    private void AnnounceOneExtraUntargeted(List<Card3DInteractable> eligible)
+    {
+        var options = new List<Card3DInteractable>();
+        foreach (var physical in eligible)
+        {
+            if (physical == null || physical.SourceCard == null ||
+                targets.Contains(physical.SourceCard)) continue;
+            options.Add(physical);
+        }
+        if (options.Count > 0)
+            Announce(options[Random.Range(0, options.Count)], true);
+    }
+
+    private void Announce(Card3DInteractable physical, bool bonusTarget = false)
     {
         var card = physical.SourceCard;
         if (card == null || !targets.Add(card)) return;
         float amount;
         if (CurrentAttack == EnemyAttackKind.PointValue) amount = pointDamage;
-        else if (CurrentAttack == EnemyAttackKind.Fester) amount = card.decayLevel;
+        // Normally Fester doubles existing decay; the extra target must still
+        // receive a real attack even if it had no decay before the telegraph.
+        else if (CurrentAttack == EnemyAttackKind.Fester)
+            amount = bonusTarget ? Mathf.Max(1, card.decayLevel) : card.decayLevel;
         else if (CurrentAttack == EnemyAttackKind.Wither || CurrentAttack == EnemyAttackKind.Spread) amount = 1;
         else
         {
@@ -97,6 +122,11 @@ public sealed class RandomEnemyTelegraph : MonoBehaviour
         visuals.SetTargeted(true);
         int displayed = decayMultiplier < 1f && CurrentAttack != EnemyAttackKind.PointValue
             ? Mathf.FloorToInt(amount * decayMultiplier) : Mathf.CeilToInt(amount);
+        // The warning must match the actual damage after Double Decay; point
+        // attacks still target an extra card but do not double point damage.
+        if (CurrentAttack != EnemyAttackKind.PointValue &&
+            RelicSystem.Instance != null && RelicSystem.Instance.HasRelic(RelicType.DoubleDecay))
+            displayed *= 2;
         visuals.SetIntent(CurrentAttack + " " + displayed + (CurrentAttack == EnemyAttackKind.PointValue ? " pts" : " rot"));
     }
 
