@@ -6,9 +6,11 @@ using UnityEngine.InputSystem;
 using UnityEngine.Rendering;
 
 /// <summary>
-/// Four back-to-back uses of the toilet raise the water and reveal a clickable
-/// sealed vial. Attach to the Toilet prefab root; place a WaterAnchor empty at
-/// the intended starting water height inside the bowl.
+/// Free-aim toilet mini-game. Hold P while exploring to spray a gravity-driven
+/// arc in the camera's aim direction, from anywhere in the room.
+/// Only actual stream impacts inside the bowl fill it. Four completed fill
+/// stages raise the water and reveal a clickable sealed vial.
+/// Attach to Toilet root and put WaterAnchor inside the bowl.
 ///
 /// The stream, placeholder water and placeholder vial are generated at runtime,
 /// so this works before the final low-poly artwork/sounds are ready.
@@ -23,8 +25,22 @@ public sealed class ToiletPuzzleInteractable : MonoBehaviour
     [SerializeField] private FirstPersonController playerController;
     [Tooltip("Optional. When empty, ANY child collider of the toilet can be used.")]
     [SerializeField] private Collider toiletInteractionCollider;
+    [Tooltip("Pickup distance for the surfaced vial; NOT a pee range limit.")]
     [SerializeField, Min(0.5f)] private float interactionDistance = 2.75f;
-    [SerializeField, Min(0.3f)] private float peeDuration = 1.6f;
+
+    [Header("Free-aim urination mini-game")]
+    [Tooltip("Hold P to pee from anywhere during Exploration. Move the mouse normally to aim.")]
+    [SerializeField, Min(0.1f)] private float secondsPerFillStage = 1.2f;
+    [Tooltip("Initial stream speed in m/s. Increase for a flatter/longer arc.")]
+    [SerializeField, Range(3f, 20f)] private float streamLaunchSpeed = 9.5f;
+    [Tooltip("Downward acceleration in m/s². Higher gravity means aiming above the bowl from farther away.")]
+    [SerializeField, Range(2f, 28f)] private float streamGravity = 13f;
+    [Tooltip("Maximum time of flight represented by the visible stream, in seconds.")]
+    [SerializeField, Range(0.5f, 3f)] private float streamFlightTime = 2f;
+    [Tooltip("Effective bowl water ellipse radius on the local X axis, in world meters.")]
+    [SerializeField, Range(0.04f, 0.35f)] private float bowlHitRadiusX = 0.13f;
+    [Tooltip("Effective bowl water ellipse radius on the local Z axis, in world meters.")]
+    [SerializeField, Range(0.04f, 0.35f)] private float bowlHitRadiusZ = 0.16f;
 
     [Header("Bowl water")]
     [Tooltip("Required: empty transform positioned at the center of the water, below the rim.")]
@@ -57,6 +73,8 @@ public sealed class ToiletPuzzleInteractable : MonoBehaviour
     [SerializeField] private AudioClip pickupClip;
 
     private readonly List<Material> generatedMaterials = new List<Material>();
+    private const int StreamSegments = 48;
+    private readonly RaycastHit[] obstacleHits = new RaycastHit[24];
     private LineRenderer stream;
     private LineRenderer ripple;
     private Transform floatingVial;
@@ -68,6 +86,9 @@ public sealed class ToiletPuzzleInteractable : MonoBehaviour
     private float targetWaterRise;
     private float elapsedVialRise;
     private float streamElapsed;
+    private float accumulatedBowlHitTime;
+    private Vector3 splashPosition;
+    private bool streamInBowl;
     private bool peeing;
     private bool revealing;
     private bool collected;
@@ -117,30 +138,74 @@ public sealed class ToiletPuzzleInteractable : MonoBehaviour
         if (floatingVial != null && !collected)
             AnimateVial();
 
-        if (peeing)
+        if (!CanInteract())
         {
-            streamElapsed += Time.deltaTime;
-            UpdateStreamVisuals();
+            StopStream();
             return;
         }
-
-        if (!CanInteract()) return;
 
         var keys = Keyboard.current;
         var mouse = Mouse.current;
+        bool holdingP = keys != null && keys.pKey.isPressed;
+        if (holdingP)
+        {
+            if (!peeing) BeginStream();
+            streamElapsed += Time.deltaTime;
+            UpdateStreamVisuals();
+
+            // Award fill only when the simulated arc physically hits the water.
+            // The player can hold P for several stages or release and try again.
+            if (streamInBowl && !collected && useCount < usesToReveal)
+                AccumulateBowlHit(Time.deltaTime);
+        }
+        else
+        {
+            StopStream();
+        }
+
         bool pressedE = keys != null && keys.eKey.wasPressedThisFrame;
         bool clicked = mouse != null && mouse.leftButton.wasPressedThisFrame;
-        if (!pressedE && !clicked) return;
+        if ((!pressedE && !clicked) || !TryGetLookHit(out var hit)) return;
+        if (IsVialHit(hit.collider)) CollectVial();
+    }
 
-        if (!TryGetLookHit(out var hit)) return;
-        if (IsVialHit(hit.collider))
+    private void BeginStream()
+    {
+        peeing = true;
+        streamElapsed = 0f;
+        if (stream != null) stream.enabled = true;
+        // Ripple appears only when the stream actually touches water.
+        if (ripple != null) ripple.enabled = false;
+        Play(peeClip);
+    }
+
+    private void StopStream()
+    {
+        if (!peeing) return;
+        peeing = false;
+        streamInBowl = false;
+        if (stream != null) stream.enabled = false;
+        if (ripple != null) ripple.enabled = false;
+    }
+
+    private void AccumulateBowlHit(float seconds)
+    {
+        accumulatedBowlHitTime += seconds;
+        while (accumulatedBowlHitTime >= secondsPerFillStage && useCount < usesToReveal)
         {
-            if (pressedE || clicked) CollectVial();
-            return;
+            accumulatedBowlHitTime -= secondsPerFillStage;
+            useCount++;
+            Play(waterSound);
+            targetWaterRise = totalWaterRise * useCount / Mathf.Max(1, usesToReveal);
+
+            if (useCount == 2)
+                Notify("The water isn't draining...");
+            else if (useCount == usesToReveal - 1 && usesToReveal > 2)
+                Notify("Something rattles beneath the water.");
+
+            if (!revealing && useCount >= usesToReveal)
+                StartCoroutine(RevealWhenWaterSettles());
         }
-        // Click is reserved for picking up the vial, never for spamming the toilet.
-        if (pressedE && IsToiletHit(hit.collider))
-            StartCoroutine(UseToilet());
     }
 
     private bool CanInteract()
@@ -179,40 +244,6 @@ public sealed class ToiletPuzzleInteractable : MonoBehaviour
         return !collected && floatingVial != null && floatingVialCollider != null &&
                floatingVialCollider.enabled && hit != null &&
                (hit == floatingVialCollider || hit.transform.IsChildOf(floatingVial));
-    }
-
-    private IEnumerator UseToilet()
-    {
-        peeing = true;
-        streamElapsed = 0f;
-        if (stream != null) stream.enabled = true;
-        if (ripple != null) ripple.enabled = true;
-        Play(peeClip);
-
-        float timer = 0f;
-        while (timer < peeDuration)
-        {
-            timer += Time.deltaTime;
-            yield return null;
-        }
-
-        if (stream != null) stream.enabled = false;
-        if (ripple != null) ripple.enabled = false;
-        peeing = false;
-        useCount++;
-        Play(waterSound);
-
-        targetWaterRise = totalWaterRise * Mathf.Min(useCount, usesToReveal) /
-                          Mathf.Max(1, usesToReveal);
-
-        // Show a small reaction, but don't require time or battles between uses.
-        if (!collected && useCount == 2)
-            Notify("The water isn't draining...");
-        else if (!collected && useCount == usesToReveal - 1 && usesToReveal > 2)
-            Notify("Something rattles beneath the water.");
-
-        if (!revealing && !collected && useCount >= usesToReveal)
-            StartCoroutine(RevealWhenWaterSettles());
     }
 
     private IEnumerator RevealWhenWaterSettles()
@@ -374,34 +405,135 @@ public sealed class ToiletPuzzleInteractable : MonoBehaviour
         ripple.enabled = false;
     }
 
+    /// <summary>
+    /// Visual and scoring use the SAME simulated trajectory. Aim is the normal
+    /// first-person mouse look. Gravity makes distant targets require aiming
+    /// above the toilet; the stream never auto-targets the bowl.
+    /// </summary>
     private void UpdateStreamVisuals()
     {
         if (stream == null || waterSurface == null || playerCamera == null) return;
-        Vector3 start = playerCamera.ViewportToWorldPoint(new Vector3(0.59f, 0.17f, 0.38f));
-        Vector3 end = waterSurface.position + Vector3.up * 0.007f;
-        Vector3 control = Vector3.Lerp(start, end, 0.46f) + Vector3.up * 0.10f;
-        Vector3 right = playerCamera.transform.right;
-        for (int i = 0; i < stream.positionCount; i++)
+
+        // A slight offset below/right of the camera suggests a first-person
+        // source without requiring a full character animation.
+        Vector3 origin = playerCamera.ViewportToWorldPoint(new Vector3(0.55f, 0.15f, 0.34f));
+        Vector3 velocity = playerCamera.transform.forward * streamLaunchSpeed;
+        float step = streamFlightTime / (StreamSegments - 1f);
+        streamInBowl = false;
+        if (ripple != null) ripple.enabled = false;
+
+        Vector3 previous = origin;
+        stream.positionCount = 1;
+        stream.SetPosition(0, origin);
+        int count = 1;
+
+        for (int i = 1; i < StreamSegments; i++)
         {
-            float t = i / (stream.positionCount - 1f);
-            float q = 1f - t;
-            Vector3 pos = q * q * start + 2f * q * t * control + t * t * end;
-            pos += right * (Mathf.Sin(t * 29f - streamElapsed * 27f) *
-                            0.003f * Mathf.Sin(t * Mathf.PI));
-            stream.SetPosition(i, pos);
+            float t = step * i;
+            Vector3 next = origin + velocity * t + Vector3.down * (0.5f * streamGravity * t * t);
+            if (TryFindStreamImpact(previous, next, out Vector3 impact, out bool landedInBowl))
+            {
+                stream.positionCount = count + 1;
+                stream.SetPosition(count, impact);
+                count++;
+                streamInBowl = landedInBowl;
+                splashPosition = impact;
+                break;
+            }
+
+            // Fine visual shimmer without steering the physically scored arc.
+            Vector3 visualPoint = next +
+                playerCamera.transform.right * (Mathf.Sin(t * 30f - streamElapsed * 24f)
+                * 0.002f * Mathf.Sin(Mathf.Min(1f, t / 0.15f) * Mathf.PI));
+            stream.positionCount = count + 1;
+            stream.SetPosition(count, visualPoint);
+            count++;
+            previous = next;
+            if (next.y < -2f) break;
         }
 
-        // A simple low-poly expanding ripple at the impact point.
-        float phase = (streamElapsed % 0.42f) / 0.42f;
-        float radius = Mathf.Lerp(0.014f, 0.060f, phase);
-        Vector3 center = end + Vector3.up * 0.004f;
-        for (int i = 0; i < 13; i++)
+        if (streamInBowl && ripple != null)
         {
-            float angle = 2f * Mathf.PI * i / 13f;
-            ripple.SetPosition(i, center +
-                new Vector3(Mathf.Cos(angle) * radius, 0f, Mathf.Sin(angle) * radius));
+            ripple.enabled = true;
+            float phase = (streamElapsed % 0.43f) / 0.43f;
+            float radius = Mathf.Lerp(0.014f, 0.055f, phase);
+            Vector3 center = splashPosition + Vector3.up * 0.004f;
+            for (int i = 0; i < ripple.positionCount; i++)
+            {
+                float angle = 2f * Mathf.PI * i / ripple.positionCount;
+                ripple.SetPosition(i, center +
+                    new Vector3(Mathf.Cos(angle) * radius, 0f,
+                                Mathf.Sin(angle) * radius));
+            }
+            ripple.widthMultiplier = 0.006f * (1f - phase * 0.75f);
         }
-        ripple.widthMultiplier = 0.005f * (1f - phase * 0.75f);
+    }
+
+    /// <summary>
+    /// Check the next piece of the parabolic stream against the elliptical
+    /// water surface and the nearest scene collider. A wall or rim in front
+    /// of the water prevents a hit, so you can't pee through geometry.
+    /// </summary>
+    private bool TryFindStreamImpact(Vector3 from, Vector3 to,
+        out Vector3 impact, out bool isWater)
+    {
+        impact = default;
+        isWater = false;
+        Vector3 travel = to - from;
+        float length = travel.magnitude;
+        if (length <= 0.0001f) return false;
+
+        float waterDistance = float.PositiveInfinity;
+        Vector3 waterContact = default;
+        float level = waterSurface.position.y;
+        // Only score the downward part of the arc crossing the water.
+        if (from.y >= level && to.y <= level && from.y > to.y)
+        {
+            float fraction = Mathf.Clamp01((from.y - level) / (from.y - to.y));
+            Vector3 candidate = Vector3.Lerp(from, to, fraction);
+            Vector3 flat = Quaternion.Inverse(waterSurface.rotation) *
+                           (candidate - waterSurface.position);
+            float x = flat.x / Mathf.Max(0.001f, bowlHitRadiusX);
+            float z = flat.z / Mathf.Max(0.001f, bowlHitRadiusZ);
+            if (x * x + z * z <= 1f)
+            {
+                waterDistance = length * fraction;
+                waterContact = candidate;
+            }
+        }
+
+        float obstacleDistance = float.PositiveInfinity;
+        Vector3 obstacleContact = default;
+        int found = Physics.RaycastNonAlloc(from, travel / length, obstacleHits,
+            length, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore);
+        for (int i = 0; i < found; i++)
+        {
+            Collider collider = obstacleHits[i].collider;
+            if (collider == null) continue;
+            // Do not let the player's own collision volume intercept the stream.
+            if (playerController != null &&
+                collider.transform.IsChildOf(playerController.transform)) continue;
+            // The water mesh may be custom; its surface is handled above rather
+            // than treated as an obstacle.
+            if (collider.transform == waterSurface ||
+                collider.transform.IsChildOf(waterSurface)) continue;
+            if (obstacleHits[i].distance >= obstacleDistance) continue;
+            obstacleDistance = obstacleHits[i].distance;
+            obstacleContact = obstacleHits[i].point;
+        }
+
+        if (waterDistance < obstacleDistance && !float.IsPositiveInfinity(waterDistance))
+        {
+            isWater = true;
+            impact = waterContact;
+            return true;
+        }
+        if (!float.IsPositiveInfinity(obstacleDistance))
+        {
+            impact = obstacleContact;
+            return true;
+        }
+        return false;
     }
 
     private Material MakeMaterial(Color color, bool transparent)
@@ -431,13 +563,31 @@ public sealed class ToiletPuzzleInteractable : MonoBehaviour
 
     private void OnGUI()
     {
-        if (peeing || !CanInteract() || !TryGetLookHit(out RaycastHit hit)) return;
-        string hint = "";
-        if (IsVialHit(hit.collider)) hint = "E / Left Click  -  Take sealed vial";
-        else if (IsToiletHit(hit.collider)) hint = "E  -  Use toilet";
-        if (hint.Length == 0) return;
+        if (!CanInteract()) return;
 
-        float width = 320f;
+        string hint = "";
+        if (peeing)
+        {
+            hint = streamInBowl
+                ? "IN THE BOWL!  Fill " + useCount + "/" + usesToReveal +
+                  "  (hold P and keep aiming)"
+                : "MISS  -  Move mouse to aim; aim higher from farther away";
+        }
+        else
+        {
+            // Show the prompt anywhere the toilet is visible, not just when
+            // standing next to it. Pressing P works without a hit raycast.
+            Vector3 viewport = playerCamera.WorldToViewportPoint(waterSurface.position);
+            if (viewport.z > 0f && viewport.x >= 0f && viewport.x <= 1f &&
+                viewport.y >= 0f && viewport.y <= 1f)
+                hint = "Hold P - Pee | Move mouse to aim (gravity affects the arc)";
+        }
+
+        if (!peeing && TryGetLookHit(out RaycastHit hit) && IsVialHit(hit.collider))
+            hint = "E / Left Click  -  Take sealed vial";
+
+        if (hint.Length == 0) return;
+        float width = 430f;
         GUI.Box(new Rect((Screen.width - width) / 2f, Screen.height * 0.74f,
                          width, 30f), hint);
     }
@@ -445,9 +595,7 @@ public sealed class ToiletPuzzleInteractable : MonoBehaviour
     private void OnDisable()
     {
         StopAllCoroutines();
-        peeing = false;
-        if (stream != null) stream.enabled = false;
-        if (ripple != null) ripple.enabled = false;
+        StopStream();
     }
 
     private void OnDestroy()
