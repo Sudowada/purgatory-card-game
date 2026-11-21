@@ -23,8 +23,6 @@ public sealed class ToiletPuzzleInteractable : MonoBehaviour
     [Header("Interaction")]
     [SerializeField] private Camera playerCamera;
     [SerializeField] private FirstPersonController playerController;
-    [Tooltip("Optional. When empty, ANY child collider of the toilet can be used.")]
-    [SerializeField] private Collider toiletInteractionCollider;
     [Tooltip("Pickup distance for the surfaced vial; NOT a pee range limit.")]
     [SerializeField, Min(0.5f)] private float interactionDistance = 2.75f;
 
@@ -227,16 +225,6 @@ public sealed class ToiletPuzzleInteractable : MonoBehaviour
         Ray ray = playerCamera.ViewportPointToRay(new Vector3(0.5f, 0.5f, 0f));
         return Physics.Raycast(ray, out hit, interactionDistance,
                                Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore);
-    }
-
-    private bool IsToiletHit(Collider hit)
-    {
-        if (hit == null || (floatingVial != null && hit.transform.IsChildOf(floatingVial)))
-            return false;
-        return toiletInteractionCollider != null
-            ? (hit == toiletInteractionCollider ||
-               hit.transform.IsChildOf(toiletInteractionCollider.transform))
-            : hit.transform == transform || hit.transform.IsChildOf(transform);
     }
 
     private bool IsVialHit(Collider hit)
@@ -568,9 +556,11 @@ public sealed class ToiletPuzzleInteractable : MonoBehaviour
         string hint = "";
         if (peeing)
         {
+            int stagePercent = Mathf.RoundToInt(
+                100f * Mathf.Clamp01(accumulatedBowlHitTime / Mathf.Max(0.1f, secondsPerFillStage)));
             hint = streamInBowl
-                ? "IN THE BOWL!  Fill " + useCount + "/" + usesToReveal +
-                  "  (hold P and keep aiming)"
+                ? "IN THE BOWL!  " + useCount + "/" + usesToReveal +
+                  " full | Next stage " + stagePercent + "%"
                 : "MISS  -  Move mouse to aim; aim higher from farther away";
         }
         else
