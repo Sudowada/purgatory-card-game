@@ -137,6 +137,15 @@ public class CollectiblesTable : MonoBehaviour
                 AddTooltip(go, "Gamblers always quit before hitting it big\nUnlocks the rare Poker Chip relic in the shop.");
                 break;
 
+            case "collectible_toilet_vial":
+                icon.text  = "◈";
+                lbl.text   = "Sealed Vial";
+                bg.color   = new Color(0.07f, 0.14f, 0.13f, 0.96f);
+                icon.color = new Color(0.58f, 0.81f, 0.75f);
+                AddTooltip(go, "A corked vial recovered from the prison toilet.\n" +
+                    "Something is rolled tightly inside. Its meaning is still unknown.");
+                break;
+
             // Add more collectibles here as you design them
             default:
                 icon.text  = "?";
