@@ -34,6 +34,8 @@ public sealed class ToiletPuzzleInteractable : MonoBehaviour
     [Tooltip("Total world-space rise after all required uses. Keep below the bowl's rim.")]
     [SerializeField, Range(0.02f, 0.18f)] private float totalWaterRise = 0.10f;
     [SerializeField, Min(1)] private int usesToReveal = 4;
+    [Tooltip("Playtest only: lets you rediscover the vial without clearing your saved collectibles.")]
+    [SerializeField] private bool ignoreSavedCompletionForTesting;
     [SerializeField] private Material waterMaterial;
 
     [Header("Floating reward")]
@@ -94,8 +96,9 @@ public sealed class ToiletPuzzleInteractable : MonoBehaviour
         initialWaterPosition = waterSurface.position;
 
         var shop = ShopManager.Instance;
-        collected = (shop != null && shop.HasCollectible(VialCollectibleId)) ||
-                    PlayerPrefs.GetInt("Purgatory.ToiletVial.v1", 0) == 1;
+        collected = !ignoreSavedCompletionForTesting &&
+                    ((shop != null && shop.HasCollectible(VialCollectibleId)) ||
+                     PlayerPrefs.GetInt("Purgatory.ToiletVial.v1", 0) == 1);
         if (collected && shop != null && !shop.HasCollectible(VialCollectibleId))
             shop.AddCollectible(VialCollectibleId);
 
