@@ -1,80 +1,105 @@
-# Prison toilet puzzle — Unity hookup (prototype)
+# Purgatory toilet puzzle — free-aim urination prototype
 
-This script intentionally does not change the Blender FBX or Unity scene/prefab:
-those remain local to the project. The script is ready to attach after pulling
-the feature branch. Asset art, sound clips, and the vial's final puzzle clue
-can be changed later.
+The toilet mini-game now uses **mouse aim and actual trajectory hits** rather
+than sending an animation automatically into the bowl. The Blender model, Unity
+scene and FBX remain local; this GitHub change contains the script and UI code.
+Unity Play Mode testing is still required.
 
-## Scene setup (about five minutes)
+## Put the script on the Toilet prefab
 
-1. Select your imported **Toilet** GameObject in the prison cell. Keep it at
-   the size/position you were using in the screenshot (currently around 0.4
-   scale). Add **ToiletPuzzleInteractable** to that top-level GameObject.
-2. Ensure the bowl has a **non-trigger collider** that the player's view ray
-   can hit. A MeshCollider on the porcelain model is easiest for a static
-   low-poly prop. You can also make a BoxCollider for the toilet body.
-   If you put a collider on a different, non-toilet parent, the script will
-   not recognize it — keep the collider on the Toilet or a child.
-3. Right-click Toilet in the Hierarchy -> Create Empty. Name it
-   **WaterAnchor**. Move it into the **interior of the bowl**, about where
-   the initial water surface should be (well below the rim, centered over the
-   drainage hole). Assign it to the **Water Anchor** field of the script.
-4. Leave **Water Surface** and **Vial Prefab** empty for now. At runtime,
-   the script will create a 12-sided flat water mesh and a corked-vial placeholder.
-   If the default water disk clips through the porcelain, adjust WaterAnchor
-   slightly or replace it with a manually shaped oval water mesh.
-5. Optionally assign **Player Camera** and **Player Controller**. If empty,
-   the script finds Camera.main and the first FirstPersonController.
-6. Optional: add an **AudioSource** and assign Pee Clip, Water Sound,
-   Reveal Clip, and Pickup Clip. These are intentionally empty by default:
-   the visible urine arc and water animation still work without any audio.
-7. Optional: create **VialRestPoint** (another empty GameObject near the
-   center/top of the bowl). Place it a little above the *final* water height
-   and assign it to **Vial Rest Point** to control where the collectible floats.
+1. Pull/open branch `feature/toilet-rising-water-urination-puzzle` (or merge
+   PR #10 and pull `main` when ready).
+2. Select the imported **Toilet** scene root and add the component
+   **ToiletPuzzleInteractable**. Ensure its porcelain bowl has an ordinary
+   **non-trigger collider** (a static MeshCollider or hand-sized colliders).
+   Collision matters: the urine stream should hit a wall or rim before the water.
+   The root's scale may remain at the current Unity preview size (~0.4).
+3. Make an empty **WaterAnchor** child placed at the **center of the bowl's
+   starting water level**, below the rim. Assign it in the component.
+   Leave **Water Surface** empty to create a 12-sided water plane at runtime,
+   or assign your own mesh instead. The default water plane has no collider:
+   water impacts are computed analytically.
+4. Leave **Vial Prefab** empty for the temporary small corked-vial model, or
+   assign your custom prefab with a collider. If you like, add a child
+   **VialRestPoint** at the final surface position and assign it to control
+   where the vial bobs.
+5. Player Camera and FirstPersonController are found automatically if not
+   assigned. Optional AudioSource + clips: Pee Clip, Water Sound,
+   Reveal Clip, Pickup Clip. Everything still works silently with no clips.
 
-## Controls and puzzle progression
+## Play and aim
 
-- In **Exploration**, point the center of the screen at the toilet. Press
-  **E** to use it. Each use plays a roughly **1.6-second** visible arc from
-  the first-person camera into the toilet, with an expanding splash ripple.
-  There is no cooldown or battle requirement; you can use it again as soon
-  as the previous animation ends.
-- **Use 1:** water rises slightly.
-- **Use 2:** water rises again; a gurgling message appears.
-- **Use 3:** water rises; a rattling message appears.
-- **Use 4:** water reaches its final height; a corked vial rises and bobs.
-- Aim at the vial, then **Left Click** or press **E** to collect it.
-  The existing CollectiblesTable displays a new **Sealed Vial** collectible.
-- You can still use the toilet after the reveal; water caps at maximum height
-  and the vial does not respawn after pickup.
-- Vial pickup persists through PlayerPrefs, independently of the current
-  scene. The clue itself is intentionally left open for a future puzzle chain.
+- Enter **Exploration** with the mouse locked for first-person look.
+- **Hold P to pee.** The stream originates just below/right of the camera,
+  points in the camera's look direction, and follows a **ballistic arc**.
+  Move the **mouse** to aim it. From farther away, **aim higher** to compensate
+  for gravity. The arc never automatically homes in on the toilet.
+- There is **no toilet interaction-distance restriction** for peeing. You can
+  attempt a shot from anywhere in the room. Actual scoring still requires a
+  clear physical trajectory into the bowl: walls, furniture and porcelain
+  block it. The toilet itself must be within reach of the arc.
+- The floating prompt shows **IN THE BOWL** when your stream hits the water;
+  otherwise it reads **MISS**. It shows how much of the current fill stage
+  you have completed.
+- Every **1.2 seconds of successfully hitting the bowl** earns one fill stage.
+  Misses and time spent peeing elsewhere **do not raise the water**.
+  Progress within a fill stage is retained if you release P and try again.
+  You can hold continuously to earn several stages or stop and restart
+  immediately—no cooldown or encounter gate.
+- **Four completed fill stages** raise the water to its final level. A
+  placeholder corked vial floats up and bobs at the surface.
+- Approach it and aim the reticle at the vial, then **E or Left Click**
+  (within 2.75 m by default) to pick it up. The existing CollectiblesTable
+  records the **Sealed Vial**. You can keep peeing afterward; the puzzle
+  doesn't award more vials.
+- Vial pickup is saved across runs by PlayerPrefs and ShopManager. For repeated
+  editor testing, toggle **Ignore Saved Completion For Testing** on the Toilet
+  script. Its actual clue/lore payload is deliberately undecided;
+  `onVialCollected` is available for the next puzzle-chain step.
 
-## Key inspector settings
+## Tuning inspector settings
 
-- **Interaction Distance:** 2.75 meters
-- **Pee Duration:** 1.6 seconds
-- **Total Water Rise:** 0.10 meters (adjust to keep water below the rim)
-- **Uses To Reveal:** 4 (set to 1 temporarily for fast visual testing)
-- **Stream Width:** 0.011 meters; generated stylized pale-yellow line
-- **Water Material / Stream Material:** optional; defaults are placeholders
-- **Ignore Saved Completion For Testing:** allows repeated vial playtests without deleting saved collectibles
-- **On Vial Collected:** UnityEvent hook for future puzzles. No listener is
-  required to pick up the reward.
+| Property | Default | What it controls |
+| --- | --- | --- |
+| Stream Launch Speed | 9.5 m/s | Range / how flat the arc looks |
+| Stream Gravity | 13 m/s² | More drop at distance; player must aim higher |
+| Stream Flight Time | 2.0 s | Max visible trajectory length |
+| Bowl Hit Radius X | 0.13 m | Side-to-side scoring radius |
+| Bowl Hit Radius Z | 0.16 m | Front-to-back scoring radius |
+| Seconds Per Fill Stage | 1.2 s | How long the player must aim accurately |
+| Uses To Reveal | 4 | Stages required for the vial |
+| Total Water Rise | 0.10 m | Final water height; must stay below rim |
+| Stream Width | 0.011 m | Width of procedural LineRenderer |
+| Interaction Distance | 2.75 m | Vial pickup only, NOT pee reach |
 
-## Notes and limits
+## First Play Mode check
 
-- The stream is **a stylized procedurally animated LineRenderer with a
-  splash ripple**, not a simulated liquid mesh or character-body animation.
-  It moves with the player camera while the use animation plays, landing in
-  the water. It is the first visual prototype; we can upgrade to a
-  particle stream or hand animation after the art-style pass.
-- The auto-water mesh is intentionally basic. Unity 6 URP unlit + sprite
-  shader fallbacks are used for temporary materials.
-- Leave toilet water and vial colliders disabled/independent of the body
-  so the body can still be targeted for pressing E.
-- If E shows no prompt, confirm GameState=Exploration, cursor is
-  locked, PlayerController is enabled, radio/shop/settings are closed,
-  the toilet has a collider, and WaterAnchor is assigned.
-- Scripts were source-reviewed, but **Unity compilation, prefab hookup,
-  interaction, and play-mode visuals have not been tested yet**.
+1. Start near the toilet. Hold P and observe the pale-yellow moving stream.
+2. Aim up/down with the mouse. It should naturally arc and land higher/lower.
+3. Hit the inside of the bowl for ~1.2 seconds; confirm first water rise.
+4. Aim away deliberately for 3 seconds; **water must NOT rise**.
+5. Stand farther back and aim slightly ABOVE the toilet; confirm you can still
+   land the arc in the bowl.
+6. Repeat until all four stages are complete; confirm a vial surfaces.
+7. Release P, approach, click the vial and confirm pickup and collectible.
+8. Go to CardGame or open settings, radio or shop; no urine interaction should
+   be available during those modes.
+
+## Notes / expected prototype limits
+
+- The stream is a stylized **LineRenderer arc with a ripple on water contact**,
+  not a fluid simulation, animated character model or custom shader. The
+  gameplay trajectory is the same path used to display the stream.
+- The bowl region is an elliptical target on the plane of Water Surface. The
+  `Bowl Hit Radius X/Z` settings should be **smaller than the visible porcelain
+  opening** and may need changing for the imported model's scale.
+- When firing, the script raycasts along the arc and stops at nearby non-trigger
+  colliders. This makes proper collision meshes important. If all shots read
+  MISS even with correct aim, check that there is no solid collider covering
+  the whole bowl opening and that WaterAnchor is above the bowl's solid bottom.
+- Stream launch is unrestricted by proximity; realistic range is set by speed,
+  gravity and obstacles. There is no scripted distance-based auto-hit.
+- The first-person player's camera stays free to move with the existing
+  mouse-look system while holding P.
+- **GitHub source and static checks only:** Unity compilation, actual prefab
+  setup and gameplay visuals still need testing inside the project.
