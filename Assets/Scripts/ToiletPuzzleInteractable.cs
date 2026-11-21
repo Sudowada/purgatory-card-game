@@ -60,6 +60,7 @@ public sealed class ToiletPuzzleInteractable : MonoBehaviour
     private Transform floatingVial;
     private Collider floatingVialCollider;
     private GameObject runtimeWater;
+    private Mesh runtimeWaterMesh;
     private Vector3 initialWaterPosition;
     private float currentWaterRise;
     private float targetWaterRise;
@@ -297,8 +298,10 @@ public sealed class ToiletPuzzleInteractable : MonoBehaviour
 
     private void CreatePlaceholderWater()
     {
-        runtimeWater = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
-        runtimeWater.name = "ToiletWater_RuntimePlaceholder";
+        // Twelve-sided flat surface, not a stock Unity cylinder: fewer polygons,
+        // no collider to steal the toilet or vial raycast, and no UV dependencies.
+        runtimeWater = new GameObject("ToiletWater_RuntimePlaceholder",
+            typeof(MeshFilter), typeof(MeshRenderer));
         runtimeWater.transform.SetParent(waterAnchor, false);
         runtimeWater.transform.localPosition = Vector3.zero;
         // Keep a ~30 x 36 cm surface even if the imported FBX root uses
@@ -306,13 +309,34 @@ public sealed class ToiletPuzzleInteractable : MonoBehaviour
         Vector3 scale = waterAnchor.lossyScale;
         runtimeWater.transform.localScale = new Vector3(
             0.30f / Mathf.Max(0.0001f, Mathf.Abs(scale.x)),
-            0.006f / Mathf.Max(0.0001f, Mathf.Abs(scale.y)),
+            1f,
             0.36f / Mathf.Max(0.0001f, Mathf.Abs(scale.z)));
-        var collider = runtimeWater.GetComponent<Collider>();
-        if (collider != null) { collider.enabled = false; Destroy(collider); }
-        var renderer = runtimeWater.GetComponent<Renderer>();
-        renderer.sharedMaterial = waterMaterial != null ? waterMaterial :
-            MakeMaterial(new Color(0.18f, 0.28f, 0.26f, 1f), false);
+        const int sides = 12;
+        Vector3[] vertices = new Vector3[sides + 1];
+        Vector2[] uv = new Vector2[sides + 1];
+        int[] triangles = new int[sides * 3];
+        vertices[0] = Vector3.zero;
+        uv[0] = new Vector2(0.5f, 0.5f);
+        for (int i = 0; i < sides; i++)
+        {
+            float angle = Mathf.PI * 2f * i / sides;
+            float x = Mathf.Cos(angle) * 0.5f;
+            float z = Mathf.Sin(angle) * 0.5f;
+            vertices[i + 1] = new Vector3(x, 0f, z);
+            uv[i + 1] = new Vector2(x + 0.5f, z + 0.5f);
+            triangles[3 * i] = 0;
+            triangles[3 * i + 1] = (i + 1) % sides + 1;
+            triangles[3 * i + 2] = i + 1;
+        }
+        runtimeWaterMesh = new Mesh { name = "ToiletWater_12Sided" };
+        runtimeWaterMesh.vertices = vertices;
+        runtimeWaterMesh.uv = uv;
+        runtimeWaterMesh.triangles = triangles;
+        runtimeWaterMesh.RecalculateNormals();
+        runtimeWater.GetComponent<MeshFilter>().sharedMesh = runtimeWaterMesh;
+        runtimeWater.GetComponent<MeshRenderer>().sharedMaterial =
+            waterMaterial != null ? waterMaterial :
+            MakeMaterial(new Color(0.13f, 0.21f, 0.20f, 1f), false);
         waterSurface = runtimeWater.transform;
     }
 
@@ -380,7 +404,7 @@ public sealed class ToiletPuzzleInteractable : MonoBehaviour
     private Material MakeMaterial(Color color, bool transparent)
     {
         Shader shader = transparent ? Shader.Find("Sprites/Default") :
-            Shader.Find("Universal Render Pipeline/Lit");
+            Shader.Find("Universal Render Pipeline/Unlit");
         if (shader == null) shader = Shader.Find("Sprites/Default");
         if (shader == null) shader = Shader.Find("Standard");
         Material material = new Material(shader);
@@ -428,6 +452,7 @@ public sealed class ToiletPuzzleInteractable : MonoBehaviour
         if (stream != null) Destroy(stream.gameObject);
         if (ripple != null) Destroy(ripple.gameObject);
         if (runtimeWater != null) Destroy(runtimeWater);
+        if (runtimeWaterMesh != null) Destroy(runtimeWaterMesh);
         if (floatingVial != null) Destroy(floatingVial.gameObject);
         foreach (var material in generatedMaterials)
             if (material != null) Destroy(material);
