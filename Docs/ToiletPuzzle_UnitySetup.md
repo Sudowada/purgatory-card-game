@@ -20,7 +20,7 @@ can be changed later.
    the initial water surface should be (well below the rim, centered over the
    drainage hole). Assign it to the **Water Anchor** field of the script.
 4. Leave **Water Surface** and **Vial Prefab** empty for now. At runtime,
-   the script will create a flat water cylinder and a corked-vial placeholder.
+   the script will create a 12-sided flat water mesh and a corked-vial placeholder.
    If the default water disk clips through the porcelain, adjust WaterAnchor
    slightly or replace it with a manually shaped oval water mesh.
 5. Optionally assign **Player Camera** and **Player Controller**. If empty,
@@ -58,6 +58,7 @@ can be changed later.
 - **Uses To Reveal:** 4 (set to 1 temporarily for fast visual testing)
 - **Stream Width:** 0.011 meters; generated stylized pale-yellow line
 - **Water Material / Stream Material:** optional; defaults are placeholders
+- **Ignore Saved Completion For Testing:** allows repeated vial playtests without deleting saved collectibles
 - **On Vial Collected:** UnityEvent hook for future puzzles. No listener is
   required to pick up the reward.
 
@@ -68,7 +69,7 @@ can be changed later.
   It moves with the player camera while the use animation plays, landing in
   the water. It is the first visual prototype; we can upgrade to a
   particle stream or hand animation after the art-style pass.
-- The auto-water mesh is intentionally basic. Unity 6 URP lit + sprite
+- The auto-water mesh is intentionally basic. Unity 6 URP unlit + sprite
   shader fallbacks are used for temporary materials.
 - Leave toilet water and vial colliders disabled/independent of the body
   so the body can still be targeted for pressing E.
