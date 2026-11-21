@@ -125,6 +125,10 @@ public class RelicSystem : MonoBehaviour
     public bool gamblerDiscardAvailable = false;
     public int  goldenCardIndex         = -1;
     private bool _goldenCardInPlay      = false;
+    // Tactical Delay alternates on committed offers: half Points, then +2 Mult.
+    // Kept across encounters, but reset if the relic is unequipped or reacquired.
+    private bool _tacticalBonusNextHand = false;
+    public bool TacticalDelayBonusNextHand => HasRelic(RelicType.TacticalDelay) && _tacticalBonusNextHand;
     public void MarkGoldenCardInPlay() => _goldenCardInPlay = true;
     void Awake()
     {
@@ -147,6 +151,7 @@ public class RelicSystem : MonoBehaviour
         { persistentMult = Mathf.Max(1f, persistentMult - earned); earnedMult.Remove(type); }
         if (type == RelicType.ComboBank) _comboBankBonus = 0f;
         if (type == RelicType.PerfectGamble) gamblerDiscardAvailable = false;
+        if (type == RelicType.TacticalDelay) _tacticalBonusNextHand = false;
         if (type == RelicType.GoldenCard) { goldenCardIndex = -1; _goldenCardInPlay = false; }
         Recalculate();
     }
@@ -188,6 +193,8 @@ public class RelicSystem : MonoBehaviour
         ShopManager.Instance?.OnEconomyRelicAcquired(type);
         if (type == RelicType.PerfectGamble)
             gamblerDiscardAvailable = true;
+        if (type == RelicType.TacticalDelay)
+            _tacticalBonusNextHand = false; // first played hand is the half-Points hand
     }
     private void Recalculate()
     {
@@ -312,6 +319,16 @@ public class RelicSystem : MonoBehaviour
     // ─────────────────────────────────────────────────────────────────────────
     public int ApplyRelicModifiers(ComboResult result, bool consumeOneShotEffects = true)
     {
+        // Tactical Delay's preview is deterministic. Only a *committed* offer
+        // advances the phase. Apply half Points before +Mult, xMult and tier xMult,
+        // never by halving the final score or changing individual card identities.
+        bool tacticalActive = HasRelic(RelicType.TacticalDelay);
+        bool tacticalBonusThisHand = tacticalActive && _tacticalBonusNextHand;
+        if (tacticalActive && !tacticalBonusThisHand && !result.isPenalty)
+            result.points = Mathf.FloorToInt(result.points * 0.5f);
+        if (tacticalActive && consumeOneShotEffects)
+            _tacticalBonusNextHand = !tacticalBonusThisHand;
+
         // Previewing must never roll or alter the last committed payout.
         if (consumeOneShotEffects) LastPokerChipMultiplier = 1;
         // Negative-score offers are also a risk: a heads doubles the penalty,
@@ -340,6 +357,7 @@ public class RelicSystem : MonoBehaviour
         }
         var   cards   = result.scoringCards;
         float addMult = result.additiveMult;
+        if (tacticalBonusThisHand) addMult += 2f;
         if (HasRelic(RelicType.LoadedDice)) addMult += LoadedDiceMult;
         // General-purpose additive Mult: compatible with any combo and suit.
         if (HasRelic(RelicType.SmallMult)) addMult += 3f;
@@ -434,6 +452,9 @@ public class RelicSystem : MonoBehaviour
             $"{result.comboName} | DIFF +{result.difference} | " +
             $"{result.points:N0} POINTS · +{addMult:0.##} +MULT · " +
             $"x{mulMult:0.##} xMULT · x{result.tierMult:0.##} DIFF xMULT" +
+            (tacticalActive ? (tacticalBonusThisHand
+                ? " | TACTICAL DELAY: +2 MULT"
+                : " | TACTICAL DELAY: HALF POINTS") : "") +
             pokerChipMessage;
         return finalScore;
     }
@@ -520,7 +541,7 @@ public class RelicSystem : MonoBehaviour
         RelicType.PerfectGamble   => new Relic(type, RelicCategory.RuleChanger,       "Perfect Gamble",   "Once per round, discard your entire hand and redraw.",                "Burn it all. Start clean."),
         RelicType.ComboMachine    => new Relic(type, RelicCategory.RuleChanger,       "Combo Machine",    "Pairs score as Three of a Kind.",                                     "Two becomes three in purgatory."),
         RelicType.CardCycler      => new Relic(type, RelicCategory.RuleChanger,       "Card Cycler",      "Playing 3+ cards draws 1 additional card.",                           "Motion is survival."),
-        RelicType.TacticalDelay   => new Relic(type, RelicCategory.RuleChanger,       "Tactical Delay",   "Skip a turn to draw 2 cards instead.",                                "Patience sharpens the blade."),
+        RelicType.TacticalDelay   => new Relic(type, RelicCategory.RuleChanger,       "Tactical Delay",   "Alternates each played hand: half Points, then +2 Mult on the next hand. Repeats.",                                "Patience sharpens the blade."),
         RelicType.RotAlchemist    => new Relic(type, RelicCategory.DecayManipulation, "Rot Alchemist",    "Each decay stack on played cards adds +0.15 Mult.",           "Ruin is a resource."),
         RelicType.CorrosionEngine => new Relic(type, RelicCategory.DecayManipulation, "Corrosion Engine", "Decay stacks increase face value instead of decreasing it.",           "Corruption breeds power."),
         RelicType.SlowRot         => new Relic(type, RelicCategory.DecayManipulation, "Slow Rot",         "Cards only decay every other turn.",                                   "Time moves differently here."),
@@ -544,7 +565,7 @@ public class RelicSystem : MonoBehaviour
         RelicType.DrawReactor     => new Relic(type, RelicCategory.CardManipulation,  "Draw Reactor",     "Playing a Pair or better draws 1 extra card.",                        "Momentum feeds momentum."),
         RelicType.ValueLock       => new Relic(type, RelicCategory.CardManipulation,  "Value Lock",       "Your highest-value card cannot decay.",                                "The crown is protected."),
         RelicType.GlassCannon     => new Relic(type, RelicCategory.RiskChallenge,     "Glass Cannon",     "Enemy face value doubles each round — gain x3 xMult.",         "Everything to gain. Everything to lose."),
-        RelicType.DoubleDecay     => new Relic(type, RelicCategory.RiskChallenge,     "Double Decay",     "Decay attacks deal double decay — gain x2 xMult.",            "Rot faster. Score harder."),
+        RelicType.DoubleDecay     => new Relic(type, RelicCategory.RiskChallenge,     "Double Decay",     "Enemy attacks target 1 extra card and deal double decay. Gain x2 xMult.",            "Rot faster. Score harder."),
         _ => new Relic(type, RelicCategory.RuleChanger, "Unknown", "???")
     };
     public string GetSynergyHint(RelicType type)
