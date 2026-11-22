@@ -93,9 +93,23 @@ required. This click-detection update is on `fix/toilet-shopwindow-click-pattern
 
 ## Troubleshooting
 
+- **Console says `[ToiletPuzzle] Click blocked: GameManager.IsInputBlocked is true`:**
+  That was an overly strict check. In Exploration mode, the game can keep
+  card gameplay input locked while room interactions are allowed, as it
+  already does for the shop window. The toilet no longer blocks on that flag
+  and will not end a pee animation because of it. Radio, shop, settings,
+  controller and game-state restrictions remain.
+- **Interaction Collider shows `Toilet (Mesh Collider)`, but that collider
+  has `Mesh: None` in the Inspector:** An empty MeshCollider cannot be
+  raycasted. The toilet now warns and falls back to root/child detection,
+  repairing empty colliders on actual MeshFilter objects or adding missing
+  colliders when **Auto Add Click Colliders** is on. For simplest testing,
+  clear **Interaction Collider** to None, keep **Auto Add Click Colliders**
+  ON, and leave **Toilet Model Root** assigned to the imported model parent.
+  You can instead assign a valid non-trigger mesh/box collider if desired.
 - **No use animation after clicking:** Enable **Debug Clicks**, check
-  `[ToiletPuzzle] Started` and `[ToiletPuzzle] Click ...` messages.
-  Confirm WaterAnchor and the correct FBX hierarchy.
+  `[ToiletPuzzle] Started` and `[ToiletClick] Interaction input received`
+  messages. Confirm WaterAnchor and the correct FBX hierarchy.
 - **The stream doesn't reach water even when aimed into the opening:**
   The porcelain's MeshCollider or a large BoxCollider may cover the
   bowl's interior. Adjust its shape or target radius and position.
