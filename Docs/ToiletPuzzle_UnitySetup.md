@@ -4,24 +4,35 @@ This update extends the already merged click-to-pee puzzle. **Left-clicking the
 toilet** begins the use animation. While the stream is flowing, **move the
 mouse** to aim. The player can look around freely but **WASD movement is
 temporarily locked**. Neither holding P nor keeping the mouse button held is
-required. The change lives in `feature/toilet-mouse-aim-after-click`.
+required. This click-detection update is on `fix/toilet-shopwindow-click-pattern` until merged into `main`.
 
 ## Scene setup
 
-1. Attach **ToiletPuzzleInteractable** to the toilet's scene root. Enable
-   **Auto Add Click Colliders** or provide non-trigger colliders on the
-   actual porcelain meshes. **Debug Clicks** will log any blocked clicks
-   and the collider hit by the click raycast.
-2. If the imported FBX Torus/Cylinder/Cube mesh parts are outside the
+1. Attach **ToiletPuzzleInteractable** to the toilet's scene root.
+   Its click detection now uses the shop window's **ScreenPointToRay +
+   Physics.Raycast + collider match** pattern, with the center crosshair
+   always used for this toilet interaction.
+2. In the Inspector, **Interaction Collider** is optional, just like
+   ShopWindowInteractable. Assign a specific **non-trigger** collider on
+   the toilet body if you want to click one precise target. With that
+   field empty, any collider on the toilet root or its children counts.
+   **Auto Add Click Colliders** creates missing MeshColliders on imported
+   porcelain parts only in this fallback mode. You do NOT have to
+   hand-create a collider if the FBX parts are covered by that option.
+   Avoid broad colliders covering the bowl opening because they can also
+   block the pee stream from reaching the water.
+3. If the imported FBX Torus/Cylinder/Cube mesh parts are outside the
    GameObject carrying the script, assign their shared parent into
-   **Toilet Model Root**. Otherwise leave it empty.
-3. Create **WaterAnchor** (an empty transform) in the bowl at the lowest
+   **Toilet Model Root** (fallback matching). Otherwise leave it empty.
+   **Debug Clicks** defaults to ON, and reports the clicked collider,
+   distance, or blocker under a `[ToiletClick]` Console prefix.
+4. Create **WaterAnchor** (an empty transform) in the bowl at the lowest
    intended water height. Assign it to the script's **Water Anchor** field.
    Leave **Water Surface** empty to get a 12-sided temporary mesh.
    You don't need to create a Water Material yet.
-4. Assign the **Player Camera** and **Player Controller** if needed,
+5. Assign the **Player Camera** and **Player Controller** if needed,
    or let the script find Camera.main and FirstPersonController.
-5. Optional: provide **Use Animator** (trigger `Use`), Pee/Water/
+6. Optional: provide **Use Animator** (trigger `Use`), Pee/Water/
    Reveal/Pickup audio clips, and a **Vial Prefab**; the puzzle runs with
    the automatic camera dip and placeholder vial if these are empty.
 
