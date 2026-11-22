@@ -27,10 +27,17 @@ FirstPersonController and collectibles. The streamed art is generated in code.
   **left-click**. The use animation starts at once.
 - After **0.4 seconds** (`Pee Start Delay`), the visible pee stream and
   optional audio begin; mouse look stays active, but walking is paused.
-- **When close and looking down into the toilet**, a gentle assist guides
-  the stream almost straight into the bowl. It's active only when close,
-  angled downward, pointed toward the water, and no wall is in the way.
-  Aim away or stand farther back and the normal gravity-curved shot returns.
+- **When close and looking down toward the bowl**, a gentle assist guides
+  the stream smoothly into the water: it keeps some of your mouse aim at the
+  start, then curves slightly toward the water as it travels. The assist
+  engages within about **2.4 m** while facing approximately toward the bowl
+  (it is more forgiving than the old narrow aim zone), but will not guide
+  shots through walls. Aim away or move farther back and the original
+  manually controlled gravity-curved stream returns.
+- An additional small **bowl catch region** above the water (7 cm high,
+  20% wider than the exact water target by default) makes scoring agree
+  with streams that visibly enter the bowl. The visual splash stays at
+  the water surface instead of floating in midair.
 - On every frame while the **stream is flowing**, hitting any part of the
   toilet porcelain **or** the bowl water adds to successful contact time.
   Peeing onto a wall, floor, or empty space does not count.
@@ -52,9 +59,12 @@ FirstPersonController and collectibles. The streamed art is generated in code.
 | Pee Duration | 2.5 seconds | Total use animation |
 | Pee Start Delay | 0.4 seconds | Delay before stream and pee sound |
 | Required Toilet Hit Fraction | **0.60** | 60% or more active contact = success |
-| Close Aim Distance | **1.9 m** | Max camera-to-bowl distance for assisted shot |
-| Close Aim Downward | **0.30** | Camera must point sufficiently downward |
-| Close Aim Alignment | **0.77** | View direction must point toward bowl |
+| Close Aim Distance | **2.4 m** | Max camera-to-bowl distance for assisted shot |
+| Close Aim Downward | **0.12** | Camera must point somewhat downward |
+| Close Aim Alignment | **0.64** | Facing generally toward the bowl triggers assistance |
+| Close Aim Bend | **0.28** | Amount of the original aim retained while curving toward water |
+| Bowl Catch Height | **0.07 m** | Scoring region above the actual water surface |
+| Bowl Catch Width | **1.20** | Scoring area 20% wider than the exact ellipse |
 | Stream Launch Speed | 9.5 m/s | Long-range shot velocity |
 | Stream Gravity | 9 m/s² | Long-range stream curvature |
 | Stream Flight Time | 1.6 seconds | Maximum displayed ballistic arc |
@@ -71,8 +81,10 @@ FirstPersonController and collectibles. The streamed art is generated in code.
 2. The camera dips immediately; the stream begins ~0.4 seconds later.
    Confirm the liquid is visibly flowing, with small dots/droplets moving
    down the line and occasional flecks at its landing point.
-3. Stand close and look down toward the water. The pee should run almost
-   directly into the toilet, with a water ripple and **IN THE BOWL** on-screen.
+3. Stand close (roughly 1–2 m) and look down generally toward the water.
+   The stream should gently bend toward the bowl and finish in the water,
+   with a water ripple and **IN THE BOWL** on-screen. You shouldn't have
+   to hit an exact, narrow spot with the crosshair.
 4. Turn away while still peeing: the stream should follow your mouse and
    should no longer auto-target the toilet.
 5. Aim on the porcelain for most of the active 2.1 seconds. The HUD should
@@ -97,9 +109,11 @@ FirstPersonController and collectibles. The streamed art is generated in code.
 - **No water material**: not required; an unlit 12-sided placeholder is
   created from WaterAnchor.
 - **No contact despite good aim**: first check that Toilet Model Root is
-  the FBX parent and the water anchor is inside the bowl. For close shots,
-  increase Close Aim Distance slightly or lower Close Aim Alignment.
-  A wall collider between camera and bowl will intentionally block assist.
+  the FBX parent and Water Anchor is centered at the actual water level
+  inside the bowl. For close shots, increase Close Aim Distance or lower
+  Close Aim Alignment (e.g. 0.58), or slightly increase Bowl Catch Height.
+  These are assists, not automatic hits on anything in view: a wall collider
+  between camera and bowl will still block the guided path.
 - **Water still doesn't rise**: inspect the `Pee complete` percentage.
   You need at least 60% of *stream-on* time landing on toilet or water,
   not 60% of total animation (the pre-stream delay is excluded).
