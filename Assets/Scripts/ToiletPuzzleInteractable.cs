@@ -8,8 +8,8 @@ using UnityEngine.Rendering;
 /// <summary>
 /// Click-to-use prison toilet puzzle. In Exploration, left-click the toilet
 /// to begin peeing. Mouse look stays active to aim a gravity-curved stream;
-/// movement is temporarily locked. A use only raises water after a successful
-/// water hit. Four successful uses reveal a clickable sealed vial.
+/// movement is temporarily locked. A use raises water when the stream hits porcelain or
+/// bowl water for most of its active duration. Four successful uses reveal a clickable sealed vial.
 /// Attach to the Toilet root and place WaterAnchor inside the bowl.
 ///
 /// The stream, placeholder water and placeholder vial are generated at runtime,
@@ -39,8 +39,8 @@ public sealed class ToiletPuzzleInteractable : MonoBehaviour
     [SerializeField, Min(0.3f)] private float peeDuration = 2.5f;
     [Tooltip("Seconds after clicking before the visible pee stream and audio start. The camera/use animation begins immediately.")]
     [SerializeField, Range(0f, 1.5f)] private float peeStartDelay = 0.4f;
-    [Tooltip("Minimum total seconds of hitting the bowl during one use to earn a water stage. Missed uses don't fill it.")]
-    [SerializeField, Range(0.05f, 2f)] private float requiredBowlHitSeconds = 0.35f;
+    [Tooltip("Minimum fraction of active pee stream time contacting porcelain or bowl water. 0.60 means 60% on target; the startup delay is excluded.")]
+    [SerializeField, Range(0.51f, 1f)] private float requiredToiletHitFraction = 0.60f;
     [Tooltip("Pee stream launch speed. Higher values travel farther with less drop.")]
     [SerializeField, Range(3f, 20f)] private float streamLaunchSpeed = 9.5f;
     [Tooltip("Pee stream downward acceleration. From farther away you'll need to aim a little higher.")]
@@ -103,9 +103,11 @@ public sealed class ToiletPuzzleInteractable : MonoBehaviour
     private float targetWaterRise;
     private float elapsedVialRise;
     private float streamElapsed;
-    private float bowlHitTimeThisUse;
+    private float streamActiveTimeThisUse;
+    private float toiletHitTimeThisUse;
     private Vector3 splashPosition;
     private bool streamInBowl;
+    private bool streamHittingToilet;
     private bool streamStarted;
     private bool peeing;
     private bool cameraPoseSaved;
@@ -279,8 +281,10 @@ public sealed class ToiletPuzzleInteractable : MonoBehaviour
     {
         peeing = true;
         streamElapsed = 0f;
-        bowlHitTimeThisUse = 0f;
+        streamActiveTimeThisUse = 0f;
+        toiletHitTimeThisUse = 0f;
         streamInBowl = false;
+        streamHittingToilet = false;
         streamStarted = false;
         cameraLocalStartPosition = playerCamera.transform.localPosition;
         cameraPoseSaved = true;
@@ -344,8 +348,10 @@ public sealed class ToiletPuzzleInteractable : MonoBehaviour
             {
                 streamElapsed += Time.deltaTime;
                 UpdateStreamVisuals();
-                if (streamInBowl)
-                    bowlHitTimeThisUse += Time.deltaTime;
+                // Only score time when the stream is actually flowing.
+                streamActiveTimeThisUse += Time.deltaTime;
+                if (streamHittingToilet)
+                    toiletHitTimeThisUse += Time.deltaTime;
             }
             yield return null;
         }
@@ -353,17 +359,22 @@ public sealed class ToiletPuzzleInteractable : MonoBehaviour
         completed = elapsed >= peeDuration;
         FinishUseAnimation();
 
-        // A click alone does not fill the bowl: the player must actually aim
-        // into the water for enough of the animation. Four successful clicks
-        // still complete the original hidden puzzle.
+        // The player must land on the toilet for MOST of the stream duration.
+        // Both porcelain and water qualify; a last-second hit is insufficient.
         if (!completed) yield break;
-        if (bowlHitTimeThisUse < requiredBowlHitSeconds)
-        {
-            if (debugClicks)
-                Debug.Log("[ToiletPuzzle] Finished use but missed bowl (" +
-                          bowlHitTimeThisUse.ToString("0.00") + "s on target).", this);
-            yield break;
-        }
+        float hitFraction = streamActiveTimeThisUse > 0.0001f
+            ? toiletHitTimeThisUse / streamActiveTimeThisUse : 0f;
+        bool successfulUse = streamActiveTimeThisUse > 0f &&
+                             hitFraction >= requiredToiletHitFraction;
+        if (debugClicks)
+            Debug.Log("[ToiletPuzzle] Pee complete: toilet contact " +
+                      (hitFraction * 100f).ToString("0") + "% (" +
+                      toiletHitTimeThisUse.ToString("0.00") + "s / " +
+                      streamActiveTimeThisUse.ToString("0.00") +
+                      "s), required " +
+                      (requiredToiletHitFraction * 100f).ToString("0") +
+                      "% — " + (successfulUse ? "SUCCESS" : "MISS") + ".", this);
+        if (!successfulUse) yield break;
 
         Play(waterSound);
         useCount++;
@@ -392,6 +403,7 @@ public sealed class ToiletPuzzleInteractable : MonoBehaviour
         if (!peeing && !cameraPoseSaved) return;
         peeing = false;
         streamInBowl = false;
+        streamHittingToilet = false;
         streamStarted = false;
         if (stream != null) stream.enabled = false;
         if (ripple != null) ripple.enabled = false;
@@ -498,6 +510,20 @@ public sealed class ToiletPuzzleInteractable : MonoBehaviour
         if (interactionCollider != null)
             return hit == interactionCollider;
 
+        Transform root = toiletModelRoot != null ? toiletModelRoot : transform;
+        return hit.transform == root || hit.transform.IsChildOf(root);
+    }
+
+    // Unlike the specific click target, scoring accepts every toilet mesh.
+    // Do not mistake other room geometry or the collected vial for a hit.
+    private bool IsToiletBodyCollider(Collider hit)
+    {
+        if (hit == null) return false;
+        if (floatingVial != null && hit.transform.IsChildOf(floatingVial))
+            return false;
+        if (waterSurface != null &&
+            (hit.transform == waterSurface || hit.transform.IsChildOf(waterSurface)))
+            return false;
         Transform root = toiletModelRoot != null ? toiletModelRoot : transform;
         return hit.transform == root || hit.transform.IsChildOf(root);
     }
@@ -683,6 +709,7 @@ public sealed class ToiletPuzzleInteractable : MonoBehaviour
         float step = streamFlightTime / (StreamSegments - 1f);
 
         streamInBowl = false;
+        streamHittingToilet = false;
         ripple.enabled = false;
         stream.positionCount = 1;
         stream.SetPosition(0, origin);
@@ -698,11 +725,13 @@ public sealed class ToiletPuzzleInteractable : MonoBehaviour
             // A collider, e.g. the rim or floor, may intercept a stream
             // segment before it crosses the water surface.
             if (TryFindStreamImpact(previous, next,
-                                    out Vector3 impact, out bool hitWater))
+                                    out Vector3 impact, out bool hitWater,
+                                    out bool hitToilet))
             {
                 stream.positionCount = count + 1;
                 stream.SetPosition(count, impact);
                 streamInBowl = hitWater;
+                streamHittingToilet = hitToilet;
                 splashPosition = impact;
                 break;
             }
@@ -732,10 +761,12 @@ public sealed class ToiletPuzzleInteractable : MonoBehaviour
     }
 
     private bool TryFindStreamImpact(Vector3 from, Vector3 to,
-                                    out Vector3 impact, out bool isWater)
+                                    out Vector3 impact, out bool isWater,
+                                     out bool isToilet)
     {
         impact = default;
         isWater = false;
+        isToilet = false;
         Vector3 motion = to - from;
         float length = motion.magnitude;
         if (length < 0.0001f) return false;
@@ -762,6 +793,7 @@ public sealed class ToiletPuzzleInteractable : MonoBehaviour
 
         float obstacleDistance = float.PositiveInfinity;
         Vector3 obstaclePoint = default;
+        Collider nearestObstacle = null;
         int n = Physics.RaycastNonAlloc(from, motion / length, obstacleHits,
                                         length, Physics.DefaultRaycastLayers,
                                         QueryTriggerInteraction.Ignore);
@@ -776,17 +808,20 @@ public sealed class ToiletPuzzleInteractable : MonoBehaviour
             if (obstacleHits[i].distance >= obstacleDistance) continue;
             obstacleDistance = obstacleHits[i].distance;
             obstaclePoint = obstacleHits[i].point;
+            nearestObstacle = c;
         }
 
         if (waterDistance < obstacleDistance && !float.IsPositiveInfinity(waterDistance))
         {
             impact = waterPoint;
             isWater = true;
+            isToilet = true; // Water in the toilet bowl counts as contact.
             return true;
         }
         if (!float.IsPositiveInfinity(obstacleDistance))
         {
             impact = obstaclePoint;
+            isToilet = IsToiletBodyCollider(nearestObstacle);
             return true;
         }
         return false;
@@ -824,11 +859,18 @@ public sealed class ToiletPuzzleInteractable : MonoBehaviour
         string hint = "";
         if (peeing)
         {
-            hint = !streamStarted
-                ? "GETTING READY  |  PEE STARTING..."
-                : streamInBowl
-                    ? "AIM WITH MOUSE  |  HITTING WATER"
-                    : "AIM WITH MOUSE  |  MISSED THE BOWL";
+            if (!streamStarted)
+                hint = "GETTING READY  |  PEE STARTING...";
+            else
+            {
+                int hitPercent = Mathf.RoundToInt(
+                    100f * toiletHitTimeThisUse /
+                    Mathf.Max(0.0001f, streamActiveTimeThisUse));
+                int neededPercent = Mathf.RoundToInt(requiredToiletHitFraction * 100f);
+                hint = (streamHittingToilet ? "HITTING TOILET" : "MISSED TOILET") +
+                       "  |  " + hitPercent + "% ON TARGET (NEED " +
+                       neededPercent + "%)";
+            }
         }
         else if (TryGetLookHit(out RaycastHit hit, interactionDistance) &&
                  IsVialHit(hit.collider))
