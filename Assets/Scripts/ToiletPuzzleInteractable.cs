@@ -15,6 +15,7 @@ using UnityEngine.Rendering;
 /// The stream, placeholder water and placeholder vial are generated at runtime,
 /// so this works before the final low-poly artwork/sounds are ready.
 /// </summary>
+[DefaultExecutionOrder(10000)]
 [DisallowMultipleComponent]
 public sealed class ToiletPuzzleInteractable : MonoBehaviour
 {
@@ -25,10 +26,12 @@ public sealed class ToiletPuzzleInteractable : MonoBehaviour
     [SerializeField] private FirstPersonController playerController;
     [Tooltip("Optional. Assign the root of the actual imported Toilet mesh hierarchy if it is NOT a child of the object holding this script. Otherwise leave empty.")]
     [SerializeField] private Transform toiletModelRoot;
-    [Tooltip("Add non-trigger MeshColliders to imported toilet meshes that don't already have a collider. Allows clicking the toilet directly, as with the radio.")]
+    [Tooltip("Optional, like ShopWindowInteractable's Interaction Collider. Assign ONE specific non-trigger toilet collider to click. Leave empty to accept any collider on the toilet mesh root or its children.")]
+    [SerializeField] private Collider interactionCollider;
+    [Tooltip("Add non-trigger MeshColliders to imported toilet meshes that don't already have a collider. Allows clicking the toilet directly, as with the shop window.")]
     [SerializeField] private bool autoAddClickColliders = true;
-    [Tooltip("Print diagnostic click information to the Console during Play Mode.")]
-    [SerializeField] private bool debugClicks;
+    [Tooltip("Print shop-style click diagnostics, including the hit collider and any blocker.")]
+    [SerializeField] private bool debugClicks = true;
     [Tooltip("Only for collecting the vial. Clicking the toilet has no distance limit.")]
     [SerializeField, Min(0.5f)] private float interactionDistance = 2.75f;
 
@@ -121,6 +124,14 @@ public sealed class ToiletPuzzleInteractable : MonoBehaviour
             playerController = FindFirstObjectByType<FirstPersonController>();
         if (audioSource == null) audioSource = GetComponent<AudioSource>();
         if (autoAddClickColliders) EnsureToiletClickColliders();
+        if (debugClicks)
+            Debug.Log("[ToiletClick] Ready on '" + name + "'. Camera='" +
+                      (playerCamera != null ? playerCamera.name : "MISSING") +
+                      "', collider='" +
+                      (interactionCollider != null ? interactionCollider.name : "root/children fallback") +
+                      "', max distance=camera far clip (" +
+                      (playerCamera != null ? playerCamera.farClipPlane.ToString("0.##") : "?") +
+                      "m).", this);
 
         // One startup message even when Debug Clicks is disabled. If this
         // never appears, the component isn't attached/enabled in this scene.
@@ -188,27 +199,42 @@ public sealed class ToiletPuzzleInteractable : MonoBehaviour
         }
         if (!clicked && !pressedE) return;
 
-        // Click the toilet under the fixed center-screen crosshair.
-        // Mouse position never selects the toilet; moving the mouse only
-        // rotates the camera to move the crosshair and aim the stream.
-        if (clicked && TryGetLookHit(out RaycastHit lookHit, playerCamera.farClipPlane))
+        if (clicked)
         {
-            if (IsToiletHit(lookHit.collider))
+            if (debugClicks) Debug.Log("[ToiletClick] Interaction input received.", this);
+
+            // Same ScreenPointToRay + first-hit collider test as ShopWindow.
+            // The first hit must be the configured toilet collider (if set)
+            // or part of its mesh hierarchy, never an object behind it.
+            if (!TryGetLookHit(out RaycastHit lookHit, playerCamera.farClipPlane))
             {
-                if (debugClicks) Debug.Log("[ToiletPuzzle] Toilet clicked: " + lookHit.collider.name, this);
+                if (debugClicks)
+                {
+                    Debug.Log("[ToiletClick] No collider hit using camera '" +
+                              playerCamera.name + "'.", this);
+                    if (interactionCollider != null && interactionCollider.isTrigger)
+                        Debug.LogWarning("[ToiletClick] Interaction Collider is a trigger; uncheck Is Trigger.", this);
+                }
+            }
+            else if (IsToiletHit(lookHit.collider))
+            {
+                if (debugClicks)
+                    Debug.Log("[ToiletClick] Toilet hit at " +
+                              lookHit.distance.ToString("0.##") + "m: '" +
+                              lookHit.collider.name + "'. Starting pee animation.", this);
                 StartCoroutine(UseToilet());
                 return;
             }
-            if (debugClicks)
-                Debug.Log("[ToiletPuzzle] Click hit '" + lookHit.collider.name +
-                          "' in hierarchy '" + GetHierarchyPath(lookHit.collider.transform) +
-                          "', but the assigned toilet mesh root is '" +
-                          (toiletModelRoot != null ? GetHierarchyPath(toiletModelRoot) :
-                           GetHierarchyPath(transform)) + "'.", this);
-        }
-        else if (clicked && debugClicks)
-        {
-            Debug.Log("[ToiletPuzzle] Click raycast hit no collider. Check toilet colliders and camera.", this);
+            else if (debugClicks)
+            {
+                string expected = interactionCollider != null
+                    ? interactionCollider.name
+                    : (toiletModelRoot != null ? toiletModelRoot.name : name);
+                Debug.Log("[ToiletClick] Hit '" + lookHit.collider.name + "' at " +
+                          lookHit.distance.ToString("0.##") + "m, expected '" +
+                          expected + "'. Actual hierarchy: " +
+                          GetHierarchyPath(lookHit.collider.transform), this);
+            }
         }
 
         // Preserve the original close-range pickup control for the surfaced vial.
@@ -367,10 +393,11 @@ public sealed class ToiletPuzzleInteractable : MonoBehaviour
 
     private bool TryGetLookHit(out RaycastHit hit, float maxDistance)
     {
-        // Purgatory uses a fixed first-person crosshair for toilet interactions.
-        // Always shoot from screen center, even if the OS cursor becomes unlocked.
-        // This same ray is used by the hover hint and vial pickup.
-        Ray ray = playerCamera.ViewportPointToRay(new Vector3(0.5f, 0.5f, 0f));
+        // ShopWindowInteractable uses ScreenPointToRay and the first Physics
+        // raycast hit. Keep the toilet's agreed fixed-center crosshair target
+        // even when the OS cursor is temporarily unlocked.
+        Vector2 point = new Vector2(Screen.width * 0.5f, Screen.height * 0.5f);
+        Ray ray = playerCamera.ScreenPointToRay(point);
         return Physics.Raycast(ray, out hit, maxDistance,
                                Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore);
     }
@@ -398,6 +425,11 @@ public sealed class ToiletPuzzleInteractable : MonoBehaviour
     {
         if (hit == null || (floatingVial != null &&
                            hit.transform.IsChildOf(floatingVial))) return false;
+
+        // Same explicit collider match + root/children fallback as ShopWindow.
+        if (interactionCollider != null)
+            return hit == interactionCollider;
+
         Transform root = toiletModelRoot != null ? toiletModelRoot : transform;
         return hit.transform == root || hit.transform.IsChildOf(root);
     }
