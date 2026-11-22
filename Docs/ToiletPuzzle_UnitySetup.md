@@ -43,9 +43,11 @@ required. This click-detection update is on `fix/toilet-shopwindow-click-pattern
   position does not matter, even when the cursor is unlocked.
   You can click from anywhere the toilet is visible and unobstructed,
   provided the crosshair ray reaches its collider.
-- The use animation and pee stream begin **immediately on click**. After
-  clicking, moving the mouse aims the stream through normal first-person
-  camera look; no further clicks are needed to aim.
+- The **use/camera animation starts immediately on click**, but the actual
+  pee stream and pee audio start **0.4 seconds afterward** by default.
+  This lead-in is adjustable using **Pee Start Delay** in the Inspector.
+  Moving the mouse continues to aim the stream once it appears; no more
+  clicks or held keys are needed.
 - For ~**2.5 seconds**, use the **mouse** to steer the camera and stream.
   Walking is locked, but looking left/right/up/down remains active.
   The stream follows a ballistic arc and can hit the wall, floor or rim.
@@ -65,7 +67,8 @@ required. This click-detection update is on `fix/toilet-shopwindow-click-pattern
 
 | Property | Default | Purpose |
 | --- | --- | --- |
-| Pee Duration | 2.5s | How long each click activates the stream |
+| Pee Duration | 2.5s | Total use-animation time from initial click |
+| Pee Start Delay | 0.4s | Time from use-animation start to visible pee/audio; clamped below duration |
 | Required Bowl Hit Seconds | 0.35s | Time on water needed to count as a success |
 | Stream Launch Speed | 9.5 m/s | Faster stream reaches further |
 | Stream Gravity | 9 m/s² | Curves downward; aim higher farther away |
@@ -78,9 +81,9 @@ required. This click-detection update is on `fix/toilet-shopwindow-click-pattern
 
 ## Play Mode checklist
 
-1. Look at the toilet and left-click.
-2. Confirm pee stream starts and camera dips, while mouse movement still
-   changes the aim.
+1. Put the fixed center crosshair on the toilet and left-click.
+2. Confirm the use/camera animation begins immediately. About **0.4s later**,
+   the stream and pee audio begin; mouse movement should change the aim.
 3. Move mouse away from the bowl. The stream should hit another surface,
    the ripple disappear, and the status say **MISSED THE BOWL**.
 4. Aim into water for at least 0.35s within the same 2.5s session.
@@ -113,8 +116,13 @@ required. This click-detection update is on `fix/toilet-shopwindow-click-pattern
 - **The stream doesn't reach water even when aimed into the opening:**
   The porcelain's MeshCollider or a large BoxCollider may cover the
   bowl's interior. Adjust its shape or target radius and position.
+- **The click is detected but there's no stream immediately:** That is
+  expected for the first **Pee Start Delay** seconds. With Debug Clicks
+  enabled, look for `Use animation started` and then `Pee stream started`
+  in the Console. The stream only appears once the lead-in finishes.
 - **Water does not rise:** A use must finish and accumulate enough
-  successful water hit time; enable Debug Clicks for miss logging.
+  successful water hit time *after the stream starts*; enable Debug Clicks
+  for miss logging.
 - **Mouse cannot aim:** Make sure the **FirstPersonController** script
   from the same feature branch was updated as well; it adds
   `MovementLocked` and `LookPitchOffset`, allowing looking without walking.
