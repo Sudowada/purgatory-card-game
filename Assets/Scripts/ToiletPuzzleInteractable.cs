@@ -126,8 +126,30 @@ public sealed class ToiletPuzzleInteractable : MonoBehaviour
         if (playerController == null)
             playerController = FindFirstObjectByType<FirstPersonController>();
         if (audioSource == null) audioSource = GetComponent<AudioSource>();
-        // A deliberately assigned interaction collider takes precedence.
-        // Don't auto-add competing MeshColliders in that configuration.
+
+        // An empty MeshCollider has no physical surface for the click ray
+        // to hit. The Unity inspector can still display it as assigned.
+        // Repair it from a colocated MeshFilter, or fall back to the
+        // model-root/children collider strategy used by the shop window.
+        if (interactionCollider is MeshCollider targetMeshCollider &&
+            targetMeshCollider.sharedMesh == null)
+        {
+            MeshFilter targetFilter = targetMeshCollider.GetComponent<MeshFilter>();
+            if (targetFilter != null && targetFilter.sharedMesh != null)
+            {
+                targetMeshCollider.sharedMesh = targetFilter.sharedMesh;
+                Debug.Log("[ToiletClick] Filled the assigned MeshCollider from its MeshFilter.", this);
+            }
+            else
+            {
+                Debug.LogWarning("[ToiletClick] Assigned Interaction Collider '" +
+                                 targetMeshCollider.name + "' has Mesh: None. " +
+                                 "Using toilet root/children fallback instead. " +
+                                 "For a fixed target, assign a collider with a real mesh.", this);
+                interactionCollider = null;
+            }
+        }
+
         if (autoAddClickColliders && interactionCollider == null)
             EnsureToiletClickColliders();
         if (debugClicks)
@@ -282,8 +304,10 @@ public sealed class ToiletPuzzleInteractable : MonoBehaviour
             if (SettingsUI.Instance != null && SettingsUI.Instance.IsOpen)
                 break;
             if (RadioInteractable.Active != null) break;
-            if (GameManager.Instance != null &&
-                (GameManager.Instance.IsShopOpen || GameManager.Instance.IsInputBlocked))
+            // Gameplay input may be blocked during Exploration while
+            // environmental interaction is still allowed (like ShopWindow).
+            // Do not cancel an already-started pee animation for that flag.
+            if (GameManager.Instance != null && GameManager.Instance.IsShopOpen)
                 break;
 
             elapsed += Time.deltaTime;
@@ -380,8 +404,9 @@ public sealed class ToiletPuzzleInteractable : MonoBehaviour
             return "Settings UI is open";
         if (GameManager.Instance != null && GameManager.Instance.IsShopOpen)
             return "shop is open";
-        if (GameManager.Instance != null && GameManager.Instance.IsInputBlocked)
-            return "GameManager.IsInputBlocked is true";
+        // GameManager.IsInputBlocked gates card-game input. It can stay true
+        // in Exploration; ShopWindowInteractable allows those clicks too.
+        // Exploration state, shop, radio and settings are guarded above.
         return null;
     }
 
@@ -410,21 +435,36 @@ public sealed class ToiletPuzzleInteractable : MonoBehaviour
 
     private void EnsureToiletClickColliders()
     {
-        // FBX meshes don't always have a collider automatically. Add one on
-        // each porcelain/seat mesh so clicking any part behaves like the radio.
-        // Never alter existing colliders or add to empty WaterAnchor objects.
-        int added = 0;
+        // Some imported FBX meshes have no collider. Others have an empty
+        // MeshCollider or a trigger-only collider which the click ray ignores.
+        // Repair or supplement those, but preserve existing valid colliders.
+        int added = 0, repaired = 0;
         Transform root = toiletModelRoot != null ? toiletModelRoot : transform;
         foreach (MeshFilter meshFilter in root.GetComponentsInChildren<MeshFilter>(true))
         {
-            if (meshFilter.sharedMesh == null ||
-                meshFilter.GetComponent<Collider>() != null) continue;
+            if (meshFilter.sharedMesh == null) continue;
+            bool hasUsableCollider = false;
+            foreach (Collider existing in meshFilter.GetComponents<Collider>())
+            {
+                if (existing is MeshCollider mesh && mesh.sharedMesh == null)
+                {
+                    mesh.sharedMesh = meshFilter.sharedMesh;
+                    repaired++;
+                }
+                if (existing.enabled && !existing.isTrigger &&
+                    (!(existing is MeshCollider) ||
+                     ((MeshCollider)existing).sharedMesh != null))
+                    hasUsableCollider = true;
+            }
+            if (hasUsableCollider) continue;
+
             MeshCollider collider = meshFilter.gameObject.AddComponent<MeshCollider>();
             collider.sharedMesh = meshFilter.sharedMesh;
             added++;
         }
         if (debugClicks)
-            Debug.Log("[ToiletPuzzle] Generated " + added + " toilet click collider(s).", this);
+            Debug.Log("[ToiletClick] Added " + added + " and repaired " +
+                      repaired + " toilet mesh collider(s).", this);
     }
 
     private bool IsToiletHit(Collider hit)
