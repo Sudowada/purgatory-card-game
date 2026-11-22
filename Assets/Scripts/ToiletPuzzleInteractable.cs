@@ -51,6 +51,10 @@ public sealed class ToiletPuzzleInteractable : MonoBehaviour
     [SerializeField, Range(0.04f, 0.35f)] private float bowlHitRadiusX = 0.13f;
     [Tooltip("Bowl target's half-length (world meters). Should fit inside the visible water surface.")]
     [SerializeField, Range(0.04f, 0.35f)] private float bowlHitRadiusZ = 0.16f;
+    [Tooltip("Forgiving hit detection just above the water. Allows a visually centered stream to count before its ray reaches the exact surface.")]
+    [SerializeField, Range(0f, 0.12f)] private float bowlCatchHeight = 0.07f;
+    [Tooltip("Multiplier for bowl hit ellipse when detecting the stream near the water (1.2 = 20% larger).")]
+    [SerializeField, Range(1f, 1.5f)] private float bowlCatchWidth = 1.20f;
     [Tooltip("Optional Animator to trigger immediately on click. The pee stream begins after Pee Start Delay.")]
     [SerializeField] private Animator useAnimator;
     [SerializeField] private string useAnimationTrigger = "Use";
@@ -84,12 +88,14 @@ public sealed class ToiletPuzzleInteractable : MonoBehaviour
     [SerializeField] private Material streamMaterial;
     [SerializeField, Range(0.004f, 0.025f)] private float streamWidth = 0.011f;
     [Header("Close-range bowl assist")]
-    [Tooltip("At or under this distance to the bowl, looking down toward it guides the stream almost straight into the water.")]
-    [SerializeField, Range(0.5f, 3f)] private float closeAimDistance = 1.9f;
+    [Tooltip("At or under this distance, looking toward the bowl gently guides the stream into the water.")]
+    [SerializeField, Range(0.5f, 3f)] private float closeAimDistance = 2.4f;
     [Tooltip("How far downward you must look for close-range bowl assist.")]
-    [SerializeField, Range(0.05f, 0.9f)] private float closeAimDownward = 0.30f;
-    [Tooltip("How closely the view must point toward the bowl to activate close-range assist.")]
-    [SerializeField, Range(0.45f, 0.99f)] private float closeAimAlignment = 0.77f;
+    [SerializeField, Range(0.05f, 0.9f)] private float closeAimDownward = 0.12f;
+    [Tooltip("How closely the view must point toward the bowl to activate close-range assist. Smaller values forgive more error, but aiming away will still miss.")]
+    [SerializeField, Range(0.45f, 0.99f)] private float closeAimAlignment = 0.64f;
+    [Tooltip("How much of your original aim is preserved while the stream gradually bends toward the bowl (0 = direct line, 0.35 = gently curved).")]
+    [SerializeField, Range(0f, 0.5f)] private float closeAimBend = 0.28f;
     [Header("Animated stream")]
     [Tooltip("Speed of small pixel droplets moving along the stream (cycles per second).")]
     [SerializeField, Range(0.5f, 8f)] private float dropletFlowSpeed = 3.2f;
@@ -403,7 +409,9 @@ public sealed class ToiletPuzzleInteractable : MonoBehaviour
         targetWaterRise = totalWaterRise * Mathf.Min(useCount, usesToReveal) /
                           Mathf.Max(1, usesToReveal);
 
-        if (!collected && useCount == 2)
+        if (!collected && useCount == 1)
+            Notify("The water rises slightly.");
+        else if (!collected && useCount == 2)
             Notify("The water isn't draining...");
         else if (!collected && useCount == usesToReveal - 1 && usesToReveal > 2)
             Notify("Something rattles beneath the water.");
@@ -790,10 +798,9 @@ public sealed class ToiletPuzzleInteractable : MonoBehaviour
     }
 
     /// <summary>
-    /// When very close and looking downward toward the bowl, gently assist
-    /// the stream into the water. Ignore the toilet's own rim colliders in
-    /// this mode, but don't shoot through walls or other room geometry.
-    /// At a distance, use the unassisted ballistic trajectory as usual.
+    /// Guide a reasonably well-aimed, close, downward shot gently toward
+    /// the actual bowl position. Reject attempts aimed away from the toilet
+    /// and don't allow the guidance to shoot through other room geometry.
     /// </summary>
     private bool TryGetCloseBowlTarget(Vector3 origin, out Vector3 target)
     {
@@ -826,6 +833,50 @@ public sealed class ToiletPuzzleInteractable : MonoBehaviour
         return true;
     }
 
+    private Vector3 GetGuidedPoint(Vector3 origin, Vector3 bowl, float fraction)
+    {
+        Vector3 direct = bowl - origin;
+        Vector3 look = playerCamera.transform.forward * direct.magnitude;
+        // The correction fades in along the flight rather than snapping the
+        // stream instantly to the center. The tip still lands in the bowl.
+        float arc = Mathf.Sin(fraction * Mathf.PI);
+        return Vector3.Lerp(origin, bowl, fraction) +
+               (look - direct) * (closeAimBend * arc) +
+               Vector3.up * (0.015f * arc);
+    }
+
+    private bool GuidedPathHasRoomObstacle(Vector3 origin, Vector3 bowl)
+    {
+        const int sections = 8;
+        Vector3 previous = origin;
+        for (int i = 1; i <= sections; i++)
+        {
+            Vector3 next = GetGuidedPoint(origin, bowl, i / (float)sections);
+            Vector3 move = next - previous;
+            float distance = move.magnitude;
+            if (distance > 0.0001f)
+            {
+                int hits = Physics.RaycastNonAlloc(previous, move / distance,
+                    obstacleHits, distance, Physics.DefaultRaycastLayers,
+                    QueryTriggerInteraction.Ignore);
+                for (int h = 0; h < hits; h++)
+                {
+                    Collider c = obstacleHits[h].collider;
+                    if (c == null) continue;
+                    if (playerController != null &&
+                        c.transform.IsChildOf(playerController.transform)) continue;
+                    if (c.transform == waterSurface ||
+                        c.transform.IsChildOf(waterSurface)) continue;
+                    if (IsToiletBodyCollider(c)) continue;
+                    if (obstacleHits[h].distance < distance - 0.01f)
+                        return true;
+                }
+            }
+            previous = next;
+        }
+        return false;
+    }
+
     /// <summary>
     /// Simulate the stream's contact and draw an animated wavy ribbon.
     /// Recycled glints travel down the drawn path, with splash flecks at
@@ -846,7 +897,8 @@ public sealed class ToiletPuzzleInteractable : MonoBehaviour
         assistedBowlAim = false;
         ripple.enabled = false;
 
-        if (TryGetCloseBowlTarget(origin, out Vector3 closeTarget))
+        if (TryGetCloseBowlTarget(origin, out Vector3 closeTarget) &&
+            !GuidedPathHasRoomObstacle(origin, closeTarget))
         {
             assistedBowlAim = true;
             streamInBowl = true;
@@ -861,8 +913,7 @@ public sealed class ToiletPuzzleInteractable : MonoBehaviour
             {
                 float u = i / (StreamSegments - 1f);
                 float envelope = Mathf.Sin(u * Mathf.PI);
-                Vector3 point = Vector3.Lerp(origin, closeTarget, u);
-                point += Vector3.up * (0.018f * envelope);
+                Vector3 point = GetGuidedPoint(origin, closeTarget, u);
                 point += right * (Mathf.Sin(u * 43f - streamElapsed * 30f) *
                                   streamWobble * envelope);
                 point += up * (Mathf.Cos(u * 29f - streamElapsed * 25f) *
@@ -999,23 +1050,28 @@ public sealed class ToiletPuzzleInteractable : MonoBehaviour
         float length = motion.magnitude;
         if (length < 0.0001f) return false;
 
-        // Analytic intersection with horizontal ellipse of water. We use
-        // world dimensions so model FBX scale (e.g. 0.4) does not change it.
+        // Forgiving capture region immediately above the visible water.
+        // This uses world-space dimensions, independent of FBX parent scale,
+        // so a stream visibly entering the bowl doesn't miss a mathematically
+        // exact, thin water plane by a couple of centimeters.
         float waterDistance = float.PositiveInfinity;
         Vector3 waterPoint = default;
-        float y = waterSurface.position.y;
+        float y = waterSurface.position.y + bowlCatchHeight;
         if (from.y >= y && to.y <= y && to.y < from.y)
         {
             float fraction = Mathf.Clamp01((from.y - y) / (from.y - to.y));
             Vector3 crossing = Vector3.Lerp(from, to, fraction);
             Vector3 flat = Quaternion.Inverse(waterSurface.rotation) *
                            (crossing - waterSurface.position);
-            float x = flat.x / Mathf.Max(0.001f, bowlHitRadiusX);
-            float z = flat.z / Mathf.Max(0.001f, bowlHitRadiusZ);
+            float x = flat.x / Mathf.Max(0.001f, bowlHitRadiusX * bowlCatchWidth);
+            float z = flat.z / Mathf.Max(0.001f, bowlHitRadiusZ * bowlCatchWidth);
             if (x * x + z * z <= 1f)
             {
                 waterDistance = length * fraction;
-                waterPoint = crossing;
+                // Keep the visual splash at the actual water height while the
+                // gameplay catch volume accepts slightly higher trajectories.
+                waterPoint = new Vector3(crossing.x,
+                    waterSurface.position.y + 0.006f, crossing.z);
             }
         }
 
