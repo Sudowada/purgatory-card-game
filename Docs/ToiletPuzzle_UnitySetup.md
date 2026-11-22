@@ -1,7 +1,7 @@
 # Purgatory prison toilet puzzle — click-to-use prototype
 
-This Unity script is on feature branch `feature/toilet-rising-water-urination-puzzle`
-(PR #10). The Blender FBX and actual Unity scene/prefab still live in your
+The toilet puzzle is on `main` after PR #10. This debugging improvement
+is proposed separately in PR #12. The Blender FBX and actual Unity scene/prefab still live in your
 local project; they are not modified through GitHub.
 
 ## Scene hookup
@@ -24,10 +24,10 @@ local project; they are not modified through GitHub.
    of the bowl's lowest water level**. Assign it to **Water Anchor**.
 5. Leave **Water Surface** empty to generate a flat 12-sided water placeholder,
    or assign a properly positioned water mesh.
-7. Optional: assign **Player Camera** (falls back to Camera.main),
+6. Optional: assign **Player Camera** (falls back to Camera.main),
    **Player Controller**, **Vial Prefab** and **Vial Rest Point**. Without a
    Vial Prefab, the script generates a temporary corked vial.
-6. Optional: assign an **AudioSource** with clips for Pee, Water,
+7. Optional: assign an **AudioSource** with clips for Pee, Water,
    Reveal and Pickup. For a real animation, assign **Use Animator** and
    its **Use Animation Trigger** (default `Use`). **Without an Animator**,
    the script still performs a small procedural camera dip.
