@@ -23,6 +23,10 @@ public sealed class ToiletPuzzleInteractable : MonoBehaviour
     [Header("Interaction")]
     [SerializeField] private Camera playerCamera;
     [SerializeField] private FirstPersonController playerController;
+    [Tooltip("Add non-trigger MeshColliders to imported toilet meshes that don't already have a collider. Allows clicking the toilet directly, as with the radio.")]
+    [SerializeField] private bool autoAddClickColliders = true;
+    [Tooltip("Print diagnostic click information to the Console during Play Mode.")]
+    [SerializeField] private bool debugClicks;
     [Tooltip("Only for collecting the vial. Clicking the toilet has no distance limit.")]
     [SerializeField, Min(0.5f)] private float interactionDistance = 2.75f;
 
@@ -97,6 +101,7 @@ public sealed class ToiletPuzzleInteractable : MonoBehaviour
         if (playerController == null)
             playerController = FindFirstObjectByType<FirstPersonController>();
         if (audioSource == null) audioSource = GetComponent<AudioSource>();
+        if (autoAddClickColliders) EnsureToiletClickColliders();
 
         if (waterSurface == null && waterAnchor != null)
             CreatePlaceholderWater();
@@ -140,13 +145,23 @@ public sealed class ToiletPuzzleInteractable : MonoBehaviour
         bool pressedE = keys != null && keys.eKey.wasPressedThisFrame;
         if (!clicked && !pressedE) return;
 
-        // Click on the toilet (not E): start its use animation immediately,
-        // from any distance as long as the toilet is visible and unobstructed.
-        if (clicked && TryGetLookHit(out RaycastHit lookHit, playerCamera.farClipPlane) &&
-            IsToiletHit(lookHit.collider))
+        // Same raycast strategy as RadioInteractable: center-screen when
+        // locked, otherwise the actual mouse pointer. Click a toilet mesh to
+        // start the animation, regardless of distance (within camera range).
+        if (clicked && TryGetLookHit(out RaycastHit lookHit, playerCamera.farClipPlane))
         {
-            StartCoroutine(UseToilet());
-            return;
+            if (IsToiletHit(lookHit.collider))
+            {
+                if (debugClicks) Debug.Log("[ToiletPuzzle] Toilet clicked: " + lookHit.collider.name, this);
+                StartCoroutine(UseToilet());
+                return;
+            }
+            if (debugClicks)
+                Debug.Log("[ToiletPuzzle] Click hit something else: " + lookHit.collider.name, this);
+        }
+        else if (clicked && debugClicks)
+        {
+            Debug.Log("[ToiletPuzzle] Click raycast hit no collider. Check toilet colliders and camera.", this);
         }
 
         // Preserve the original close-range pickup control for the surfaced vial.
@@ -249,15 +264,41 @@ public sealed class ToiletPuzzleInteractable : MonoBehaviour
         if (SettingsUI.Instance != null && SettingsUI.Instance.IsOpen) return false;
         if (GameManager.Instance != null &&
             (GameManager.Instance.IsShopOpen || GameManager.Instance.IsInputBlocked)) return false;
-        if (Cursor.lockState != CursorLockMode.Locked) return false;
+        // Like the radio, click input works with either a locked center
+        // crosshair or an unlocked visible mouse cursor.
         return true;
     }
 
     private bool TryGetLookHit(out RaycastHit hit, float maxDistance)
     {
-        Ray ray = playerCamera.ViewportPointToRay(new Vector3(0.5f, 0.5f, 0f));
+        // Follow RadioInteractable's ScreenPointToRay convention exactly:
+        // first-person view uses the center crosshair; if the cursor is
+        // unlocked, use its on-screen position instead.
+        Vector2 point = Cursor.lockState == CursorLockMode.Locked ||
+                        Mouse.current == null
+            ? new Vector2(Screen.width * 0.5f, Screen.height * 0.5f)
+            : Mouse.current.position.ReadValue();
+        Ray ray = playerCamera.ScreenPointToRay(point);
         return Physics.Raycast(ray, out hit, maxDistance,
                                Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore);
+    }
+
+    private void EnsureToiletClickColliders()
+    {
+        // FBX meshes don't always have a collider automatically. Add one on
+        // each porcelain/seat mesh so clicking any part behaves like the radio.
+        // Never alter existing colliders or add to empty WaterAnchor objects.
+        int added = 0;
+        foreach (MeshFilter meshFilter in GetComponentsInChildren<MeshFilter>(true))
+        {
+            if (meshFilter.sharedMesh == null ||
+                meshFilter.GetComponent<Collider>() != null) continue;
+            MeshCollider collider = meshFilter.gameObject.AddComponent<MeshCollider>();
+            collider.sharedMesh = meshFilter.sharedMesh;
+            added++;
+        }
+        if (debugClicks)
+            Debug.Log("[ToiletPuzzle] Generated " + added + " toilet click collider(s).", this);
     }
 
     private bool IsToiletHit(Collider hit)

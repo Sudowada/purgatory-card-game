@@ -7,10 +7,12 @@ local project; they are not modified through GitHub.
 ## Scene hookup
 
 1. Add **ToiletPuzzleInteractable** to your **Toilet** scene-root object.
-2. Put a **non-trigger Collider** on the toilet or its porcelain child.
-   Clicking the visible mesh through the center crosshair will activate it.
-   The collider must be reachable by a raycast and not hidden behind a larger
-   wall or room collider. A non-convex MeshCollider is fine on static porcelain.
+2. Keep **Auto Add Click Colliders** enabled on the toilet script.
+   It adds non-trigger MeshColliders at runtime to imported toilet mesh parts
+   that do not have a collider. Existing colliders remain untouched.
+   An opaque room/wall collider in front of the toilet will still block clicks.
+   If your model already has appropriate colliders, you can turn this off.
+   Enable **Debug Clicks** to log the hit collider or missed raycast in Play Mode.
 3. Add a child Empty GameObject **WaterAnchor** and position it at the **center
    of the bowl's lowest water level**. Assign it to **Water Anchor**.
 4. Leave **Water Surface** empty to generate a flat 12-sided water placeholder,
@@ -26,6 +28,8 @@ local project; they are not modified through GitHub.
 ## Playing
 
 - During **Exploration**, **look at the toilet and left-click**.
+  Just like the radio: with a locked cursor, click the center crosshair;
+  with an unlocked cursor, click the toilet mesh under the mouse pointer.
 - A short use animation begins **immediately**. At that same moment,
   the pale-yellow procedural stream starts pouring toward the water, with
   a little ripple where it lands.
@@ -62,6 +66,8 @@ local project; they are not modified through GitHub.
 ## Quick Play Mode checks
 
 1. Walk near or look at toilet from across the prison cell.
+   The imported model needs mesh renderers (and the script's automatic collider
+   setup enabled) so the click ray has a solid surface to detect.
 2. Center the crosshair on the toilet and **left-click**.
 3. Confirm the camera dips a little and the stream starts **immediately**,
    then ends after about 1.6 seconds. The water rises.
