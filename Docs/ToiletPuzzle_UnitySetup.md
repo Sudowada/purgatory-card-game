@@ -1,7 +1,7 @@
 # Purgatory prison toilet puzzle — click-to-use prototype
 
-This Unity script is on feature branch `feature/toilet-rising-water-urination-puzzle`
-(PR #10). The Blender FBX and actual Unity scene/prefab still live in your
+The toilet puzzle is on `main` after PR #10. This debugging improvement
+is proposed separately in PR #12. The Blender FBX and actual Unity scene/prefab still live in your
 local project; they are not modified through GitHub.
 
 ## Scene hookup
@@ -12,15 +12,22 @@ local project; they are not modified through GitHub.
    that do not have a collider. Existing colliders remain untouched.
    An opaque room/wall collider in front of the toilet will still block clicks.
    If your model already has appropriate colliders, you can turn this off.
-   Enable **Debug Clicks** to log the hit collider or missed raycast in Play Mode.
-3. Add a child Empty GameObject **WaterAnchor** and position it at the **center
+   Enable **Debug Clicks** to log the hit collider, hierarchy path, or blocked
+   interaction reason in Play Mode. A one-time **[ToiletPuzzle] Started** log
+   appears even with debugging disabled. If it is missing, check the component
+   is attached and enabled on the toilet in the currently loaded scene.
+3. **Toilet Model Root** is optional. If the toilet FBX's Torus/Cylinder/Cube
+   meshes are NOT children of the GameObject with ToiletPuzzleInteractable,
+   drag the parent of those meshes into this field, so the click test knows
+   that those meshes are part of the toilet. Otherwise leave it empty.
+4. Add a child Empty GameObject **WaterAnchor** and position it at the **center
    of the bowl's lowest water level**. Assign it to **Water Anchor**.
-4. Leave **Water Surface** empty to generate a flat 12-sided water placeholder,
+5. Leave **Water Surface** empty to generate a flat 12-sided water placeholder,
    or assign a properly positioned water mesh.
-5. Optional: assign **Player Camera** (falls back to Camera.main),
+6. Optional: assign **Player Camera** (falls back to Camera.main),
    **Player Controller**, **Vial Prefab** and **Vial Rest Point**. Without a
    Vial Prefab, the script generates a temporary corked vial.
-6. Optional: assign an **AudioSource** with clips for Pee, Water,
+7. Optional: assign an **AudioSource** with clips for Pee, Water,
    Reveal and Pickup. For a real animation, assign **Use Animator** and
    its **Use Animation Trigger** (default `Use`). **Without an Animator**,
    the script still performs a small procedural camera dip.

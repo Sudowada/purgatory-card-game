@@ -23,6 +23,8 @@ public sealed class ToiletPuzzleInteractable : MonoBehaviour
     [Header("Interaction")]
     [SerializeField] private Camera playerCamera;
     [SerializeField] private FirstPersonController playerController;
+    [Tooltip("Optional. Assign the root of the actual imported Toilet mesh hierarchy if it is NOT a child of the object holding this script. Otherwise leave empty.")]
+    [SerializeField] private Transform toiletModelRoot;
     [Tooltip("Add non-trigger MeshColliders to imported toilet meshes that don't already have a collider. Allows clicking the toilet directly, as with the radio.")]
     [SerializeField] private bool autoAddClickColliders = true;
     [Tooltip("Print diagnostic click information to the Console during Play Mode.")]
@@ -103,6 +105,16 @@ public sealed class ToiletPuzzleInteractable : MonoBehaviour
         if (audioSource == null) audioSource = GetComponent<AudioSource>();
         if (autoAddClickColliders) EnsureToiletClickColliders();
 
+        // One startup message even when Debug Clicks is disabled. If this
+        // never appears, the component isn't attached/enabled in this scene.
+        Transform model = toiletModelRoot != null ? toiletModelRoot : transform;
+        Debug.Log("[ToiletPuzzle] Started on '" + name + "'; mesh root='" +
+                  model.name + "'; camera='" +
+                  (playerCamera != null ? playerCamera.name : "MISSING") +
+                  "'; WaterAnchor='" +
+                  (waterAnchor != null ? waterAnchor.name : "MISSING") +
+                  "'; active=" + isActiveAndEnabled + ".", this);
+
         if (waterSurface == null && waterAnchor != null)
             CreatePlaceholderWater();
         if (waterSurface == null)
@@ -136,13 +148,27 @@ public sealed class ToiletPuzzleInteractable : MonoBehaviour
         if (floatingVial != null && !collected)
             AnimateVial();
 
-        // The coroutine owns the camera and stream during the use animation.
-        if (peeing || !CanInteract()) return;
-
+        // Read click input before early-exit guards, so Debug Clicks can
+        // explain why the toilet didn't react in the current scene.
         var mouse = Mouse.current;
         var keys = Keyboard.current;
         bool clicked = mouse != null && mouse.leftButton.wasPressedThisFrame;
         bool pressedE = keys != null && keys.eKey.wasPressedThisFrame;
+
+        if (peeing)
+        {
+            if (clicked && debugClicks)
+                Debug.Log("[ToiletPuzzle] Click ignored: use animation still playing.", this);
+            return;
+        }
+
+        string blockedBy = GetInteractionBlockReason();
+        if (blockedBy != null)
+        {
+            if (clicked && debugClicks)
+                Debug.Log("[ToiletPuzzle] Click blocked: " + blockedBy, this);
+            return;
+        }
         if (!clicked && !pressedE) return;
 
         // Same raycast strategy as RadioInteractable: center-screen when
@@ -157,7 +183,11 @@ public sealed class ToiletPuzzleInteractable : MonoBehaviour
                 return;
             }
             if (debugClicks)
-                Debug.Log("[ToiletPuzzle] Click hit something else: " + lookHit.collider.name, this);
+                Debug.Log("[ToiletPuzzle] Click hit '" + lookHit.collider.name +
+                          "' in hierarchy '" + GetHierarchyPath(lookHit.collider.transform) +
+                          "', but the assigned toilet mesh root is '" +
+                          (toiletModelRoot != null ? GetHierarchyPath(toiletModelRoot) :
+                           GetHierarchyPath(transform)) + "'.", this);
         }
         else if (clicked && debugClicks)
         {
@@ -254,19 +284,38 @@ public sealed class ToiletPuzzleInteractable : MonoBehaviour
         cameraPoseSaved = false;
     }
 
-    private bool CanInteract()
+    private bool CanInteract() => GetInteractionBlockReason() == null;
+
+    private string GetInteractionBlockReason()
     {
-        if (playerCamera == null || waterSurface == null) return false;
+        if (playerCamera == null) return "Player Camera is missing (set FPCamera)";
+        if (waterSurface == null) return "water setup is missing (assign WaterAnchor)";
         if (GameStateManager.Instance != null &&
-            GameStateManager.Instance.CurrentState != GameState.Exploration) return false;
-        if (playerController != null && !playerController.enabled) return false;
-        if (RadioInteractable.Active != null) return false;
-        if (SettingsUI.Instance != null && SettingsUI.Instance.IsOpen) return false;
-        if (GameManager.Instance != null &&
-            (GameManager.Instance.IsShopOpen || GameManager.Instance.IsInputBlocked)) return false;
-        // Like the radio, click input works with either a locked center
-        // crosshair or an unlocked visible mouse cursor.
-        return true;
+            GameStateManager.Instance.CurrentState != GameState.Exploration)
+            return "game state is not Exploration";
+        if (playerController != null && !playerController.enabled)
+            return "FirstPersonController is disabled";
+        if (RadioInteractable.Active != null)
+            return "radio interaction is active";
+        if (SettingsUI.Instance != null && SettingsUI.Instance.IsOpen)
+            return "Settings UI is open";
+        if (GameManager.Instance != null && GameManager.Instance.IsShopOpen)
+            return "shop is open";
+        if (GameManager.Instance != null && GameManager.Instance.IsInputBlocked)
+            return "GameManager.IsInputBlocked is true";
+        return null;
+    }
+
+    private static string GetHierarchyPath(Transform item)
+    {
+        if (item == null) return "<null>";
+        string path = item.name;
+        while (item.parent != null)
+        {
+            item = item.parent;
+            path = item.name + "/" + path;
+        }
+        return path;
     }
 
     private bool TryGetLookHit(out RaycastHit hit, float maxDistance)
@@ -289,7 +338,8 @@ public sealed class ToiletPuzzleInteractable : MonoBehaviour
         // each porcelain/seat mesh so clicking any part behaves like the radio.
         // Never alter existing colliders or add to empty WaterAnchor objects.
         int added = 0;
-        foreach (MeshFilter meshFilter in GetComponentsInChildren<MeshFilter>(true))
+        Transform root = toiletModelRoot != null ? toiletModelRoot : transform;
+        foreach (MeshFilter meshFilter in root.GetComponentsInChildren<MeshFilter>(true))
         {
             if (meshFilter.sharedMesh == null ||
                 meshFilter.GetComponent<Collider>() != null) continue;
@@ -305,7 +355,8 @@ public sealed class ToiletPuzzleInteractable : MonoBehaviour
     {
         if (hit == null || (floatingVial != null &&
                            hit.transform.IsChildOf(floatingVial))) return false;
-        return hit.transform == transform || hit.transform.IsChildOf(transform);
+        Transform root = toiletModelRoot != null ? toiletModelRoot : transform;
+        return hit.transform == root || hit.transform.IsChildOf(root);
     }
 
     private bool IsVialHit(Collider hit)
