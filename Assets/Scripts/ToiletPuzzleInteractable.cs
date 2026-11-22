@@ -727,15 +727,21 @@ public sealed class ToiletPuzzleInteractable : MonoBehaviour
 
         string hint = "";
         if (peeing)
+        {
             hint = streamInBowl
                 ? "AIM WITH MOUSE  |  HITTING WATER"
                 : "AIM WITH MOUSE  |  MISSED THE BOWL";
-        if (TryGetLookHit(out RaycastHit hit, interactionDistance) &&
-            IsVialHit(hit.collider))
+        }
+        else if (TryGetLookHit(out RaycastHit hit, interactionDistance) &&
+                 IsVialHit(hit.collider))
+        {
             hint = "E / Left Click  -  Take sealed vial";
+        }
         else if (TryGetLookHit(out hit, playerCamera.farClipPlane) &&
                  IsToiletHit(hit.collider))
+        {
             hint = "Left Click  -  Use toilet";
+        }
 
         if (hint.Length == 0) return;
         float width = 360f;
