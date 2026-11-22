@@ -83,6 +83,18 @@ public sealed class ToiletPuzzleInteractable : MonoBehaviour
     [Tooltip("Optional transparent material. Uses a basic unlit material by default.")]
     [SerializeField] private Material streamMaterial;
     [SerializeField, Range(0.004f, 0.025f)] private float streamWidth = 0.011f;
+    [Header("Close-range bowl assist")]
+    [Tooltip("At or under this distance to the bowl, looking down toward it guides the stream almost straight into the water.")]
+    [SerializeField, Range(0.5f, 3f)] private float closeAimDistance = 1.9f;
+    [Tooltip("How far downward you must look for close-range bowl assist.")]
+    [SerializeField, Range(0.05f, 0.9f)] private float closeAimDownward = 0.30f;
+    [Tooltip("How closely the view must point toward the bowl to activate close-range assist.")]
+    [SerializeField, Range(0.45f, 0.99f)] private float closeAimAlignment = 0.77f;
+    [Header("Animated stream")]
+    [Tooltip("Speed of small pixel droplets moving along the stream (cycles per second).")]
+    [SerializeField, Range(0.5f, 8f)] private float dropletFlowSpeed = 3.2f;
+    [Tooltip("How much the stream wriggles as it flows (world meters).")]
+    [SerializeField, Range(0f, 0.015f)] private float streamWobble = 0.004f;
     [SerializeField] private AudioSource audioSource;
     [SerializeField] private AudioClip peeClip;
     [SerializeField] private AudioClip waterSound;
@@ -91,8 +103,16 @@ public sealed class ToiletPuzzleInteractable : MonoBehaviour
 
     private readonly List<Material> generatedMaterials = new List<Material>();
     private const int StreamSegments = 36;
+    private const int DropletCount = 7;
+    private const int SplashCount = 4;
     private readonly RaycastHit[] obstacleHits = new RaycastHit[24];
+    private readonly Vector3[] drawnStreamPoints = new Vector3[StreamSegments];
+    private readonly Transform[] droplets = new Transform[DropletCount];
+    private readonly Transform[] splashes = new Transform[SplashCount];
+    private int drawnStreamCount;
+    private bool assistedBowlAim;
     private LineRenderer stream;
+    private LineRenderer streamHighlight;
     private LineRenderer ripple;
     private Transform floatingVial;
     private Collider floatingVialCollider;
@@ -285,6 +305,7 @@ public sealed class ToiletPuzzleInteractable : MonoBehaviour
         toiletHitTimeThisUse = 0f;
         streamInBowl = false;
         streamHittingToilet = false;
+        assistedBowlAim = false;
         streamStarted = false;
         cameraLocalStartPosition = playerCamera.transform.localPosition;
         cameraPoseSaved = true;
@@ -393,6 +414,7 @@ public sealed class ToiletPuzzleInteractable : MonoBehaviour
     private void BeginStream()
     {
         if (stream != null) stream.enabled = true;
+        if (streamHighlight != null) streamHighlight.enabled = true;
         if (ripple != null) ripple.enabled = false;
         Play(peeClip);
         UpdateStreamVisuals();
@@ -404,9 +426,12 @@ public sealed class ToiletPuzzleInteractable : MonoBehaviour
         peeing = false;
         streamInBowl = false;
         streamHittingToilet = false;
+        assistedBowlAim = false;
         streamStarted = false;
         if (stream != null) stream.enabled = false;
+        if (streamHighlight != null) streamHighlight.enabled = false;
         if (ripple != null) ripple.enabled = false;
+        HideStreamParticles();
 
         if (cameraPoseSaved && playerCamera != null &&
             (GameStateManager.Instance == null ||
