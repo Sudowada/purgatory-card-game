@@ -690,20 +690,41 @@ public sealed class ToiletPuzzleInteractable : MonoBehaviour
 
     private void CreateStreamVisuals()
     {
+        // Main ribbon plus a narrow brighter moving highlight: a stylized
+        // low-poly stream, not a fluid simulator or external visual asset.
         GameObject go = new GameObject("ToiletPeeStream_Runtime");
         go.transform.SetParent(transform, true);
         stream = go.AddComponent<LineRenderer>();
         stream.useWorldSpace = true;
         stream.positionCount = StreamSegments;
         stream.widthMultiplier = streamWidth;
-        stream.widthCurve = AnimationCurve.Linear(0f, 0.4f, 1f, 0.7f);
+        stream.widthCurve = new AnimationCurve(
+            new Keyframe(0f, 0.55f), new Keyframe(0.3f, 1f),
+            new Keyframe(1f, 0.45f));
         stream.numCornerVertices = 0;
         stream.numCapVertices = 0;
         stream.shadowCastingMode = ShadowCastingMode.Off;
         stream.receiveShadows = false;
         stream.sharedMaterial = streamMaterial != null ? streamMaterial :
-            MakeMaterial(new Color(0.78f, 0.72f, 0.34f, 0.92f), true);
+            MakeMaterial(new Color(0.80f, 0.75f, 0.37f, 0.92f), true);
         stream.enabled = false;
+
+        GameObject highlightObject = new GameObject("ToiletPeeHighlight_Runtime");
+        highlightObject.transform.SetParent(transform, true);
+        streamHighlight = highlightObject.AddComponent<LineRenderer>();
+        streamHighlight.useWorldSpace = true;
+        streamHighlight.positionCount = StreamSegments;
+        streamHighlight.widthMultiplier = streamWidth * 0.30f;
+        streamHighlight.widthCurve = new AnimationCurve(
+            new Keyframe(0f, 0.3f), new Keyframe(0.45f, 1f),
+            new Keyframe(1f, 0.2f));
+        streamHighlight.numCornerVertices = 0;
+        streamHighlight.numCapVertices = 0;
+        streamHighlight.shadowCastingMode = ShadowCastingMode.Off;
+        streamHighlight.receiveShadows = false;
+        Material brighterPee = MakeMaterial(new Color(1f, 0.93f, 0.58f, 0.95f), true);
+        streamHighlight.sharedMaterial = brighterPee;
+        streamHighlight.enabled = false;
 
         GameObject circle = new GameObject("ToiletPeeRipple_Runtime");
         circle.transform.SetParent(transform, true);
@@ -715,63 +736,195 @@ public sealed class ToiletPuzzleInteractable : MonoBehaviour
         ripple.numCornerVertices = 0;
         ripple.shadowCastingMode = ShadowCastingMode.Off;
         ripple.receiveShadows = false;
-        ripple.sharedMaterial = stream.sharedMaterial;
+        ripple.sharedMaterial = brighterPee;
         ripple.enabled = false;
+
+        // Parent is counter-scaled so the imported 0.4-scale FBX does not
+        // shrink droplets. All particles use shared cube meshes/materials,
+        // are pooled, and are on Ignore Raycast so they cannot steal clicks.
+        GameObject particles = new GameObject("ToiletPeeParticles_Runtime");
+        particleRoot = particles.transform;
+        particleRoot.SetParent(transform, false);
+        Vector3 scale = transform.lossyScale;
+        particleRoot.localScale = new Vector3(
+            1f / Mathf.Max(0.0001f, Mathf.Abs(scale.x)),
+            1f / Mathf.Max(0.0001f, Mathf.Abs(scale.y)),
+            1f / Mathf.Max(0.0001f, Mathf.Abs(scale.z)));
+        for (int i = 0; i < DropletCount; i++)
+            droplets[i] = CreatePeeParticle("StreamDroplet_" + i, brighterPee);
+        for (int i = 0; i < SplashCount; i++)
+            splashes[i] = CreatePeeParticle("SplashDroplet_" + i, brighterPee);
+    }
+
+    private Transform CreatePeeParticle(string particleName, Material material)
+    {
+        GameObject go = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        go.name = particleName;
+        go.layer = 2; // Ignore Raycast
+        go.transform.SetParent(particleRoot, false);
+        Collider collider = go.GetComponent<Collider>();
+        if (collider != null) Destroy(collider);
+        Renderer renderer = go.GetComponent<Renderer>();
+        renderer.sharedMaterial = material;
+        renderer.shadowCastingMode = ShadowCastingMode.Off;
+        renderer.receiveShadows = false;
+        go.SetActive(false);
+        return go.transform;
+    }
+
+    private void HideStreamParticles()
+    {
+        foreach (Transform droplet in droplets)
+            if (droplet != null) droplet.gameObject.SetActive(false);
+        foreach (Transform splash in splashes)
+            if (splash != null) splash.gameObject.SetActive(false);
+    }
+
+    private void SetVisualPoint(int index, Vector3 point)
+    {
+        drawnStreamPoints[index] = point;
+        stream.SetPosition(index, point);
+        streamHighlight.SetPosition(index,
+            point + playerCamera.transform.up * 0.0015f);
     }
 
     /// <summary>
-    /// Show a ballistic stream in the mouse-controlled camera's forward
-    /// direction. The same visible samples also test contact with the bowl.
+    /// When very close and looking downward toward the bowl, gently assist
+    /// the stream into the water. Ignore the toilet's own rim colliders in
+    /// this mode, but don't shoot through walls or other room geometry.
+    /// At a distance, use the unassisted ballistic trajectory as usual.
+    /// </summary>
+    private bool TryGetCloseBowlTarget(Vector3 origin, out Vector3 target)
+    {
+        target = waterSurface.position + Vector3.up * 0.006f;
+        if (Vector3.Distance(playerCamera.transform.position, target) > closeAimDistance)
+            return false;
+
+        Vector3 direction = target - origin;
+        float distance = direction.magnitude;
+        if (distance < 0.03f || target.y >= origin.y) return false;
+        Vector3 aim = playerCamera.transform.forward;
+        if (aim.y > -closeAimDownward) return false;
+        if (Vector3.Dot(aim, direction / distance) < closeAimAlignment)
+            return false;
+
+        int hits = Physics.RaycastNonAlloc(origin, direction / distance, obstacleHits,
+            distance, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore);
+        for (int i = 0; i < hits; i++)
+        {
+            Collider c = obstacleHits[i].collider;
+            if (c == null || !c.enabled) continue;
+            if (playerController != null &&
+                c.transform.IsChildOf(playerController.transform)) continue;
+            if (c.transform == waterSurface ||
+                c.transform.IsChildOf(waterSurface)) continue;
+            if (IsToiletBodyCollider(c)) continue;
+            if (obstacleHits[i].distance < distance - 0.02f)
+                return false;
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// Simulate the stream's contact and draw an animated wavy ribbon.
+    /// Recycled glints travel down the drawn path, with splash flecks at
+    /// porcelain/water impact. All rendering uses the same gameplay path.
     /// </summary>
     private void UpdateStreamVisuals()
     {
-        if (stream == null || ripple == null || waterSurface == null || playerCamera == null)
+        if (stream == null || streamHighlight == null || ripple == null ||
+            waterSurface == null || playerCamera == null)
             return;
 
         Vector3 origin = playerCamera.ViewportToWorldPoint(
             new Vector3(0.56f, 0.18f, 0.34f));
-        Vector3 velocity = playerCamera.transform.forward * streamLaunchSpeed;
-        float step = streamFlightTime / (StreamSegments - 1f);
-
+        Vector3 right = playerCamera.transform.right;
+        Vector3 up = playerCamera.transform.up;
         streamInBowl = false;
         streamHittingToilet = false;
+        assistedBowlAim = false;
         ripple.enabled = false;
-        stream.positionCount = 1;
-        stream.SetPosition(0, origin);
 
-        Vector3 previous = origin;
-        int count = 1;
-        for (int i = 1; i < StreamSegments; i++)
+        if (TryGetCloseBowlTarget(origin, out Vector3 closeTarget))
         {
-            float t = step * i;
-            Vector3 next = origin + velocity * t +
-                           Vector3.down * (0.5f * streamGravity * t * t);
+            assistedBowlAim = true;
+            streamInBowl = true;
+            streamHittingToilet = true;
+            splashPosition = closeTarget;
+            stream.positionCount = StreamSegments;
+            streamHighlight.positionCount = StreamSegments;
+            drawnStreamCount = StreamSegments;
 
-            // A collider, e.g. the rim or floor, may intercept a stream
-            // segment before it crosses the water surface.
-            if (TryFindStreamImpact(previous, next,
-                                    out Vector3 impact, out bool hitWater,
-                                    out bool hitToilet))
+            // A nearly straight, gently flowing downward stream.
+            for (int i = 0; i < StreamSegments; i++)
             {
-                stream.positionCount = count + 1;
-                stream.SetPosition(count, impact);
-                streamInBowl = hitWater;
-                streamHittingToilet = hitToilet;
-                splashPosition = impact;
-                break;
+                float u = i / (StreamSegments - 1f);
+                float envelope = Mathf.Sin(u * Mathf.PI);
+                Vector3 point = Vector3.Lerp(origin, closeTarget, u);
+                point += Vector3.up * (0.018f * envelope);
+                point += right * (Mathf.Sin(u * 43f - streamElapsed * 30f) *
+                                  streamWobble * envelope);
+                point += up * (Mathf.Cos(u * 29f - streamElapsed * 25f) *
+                               streamWobble * 0.3f * envelope);
+                SetVisualPoint(i, point);
             }
+        }
+        else
+        {
+            Vector3 velocity = playerCamera.transform.forward * streamLaunchSpeed;
+            float step = streamFlightTime / (StreamSegments - 1f);
+            stream.positionCount = 1;
+            streamHighlight.positionCount = 1;
+            SetVisualPoint(0, origin);
+            drawnStreamCount = 1;
+            Vector3 previous = origin;
 
-            Vector3 wobble = playerCamera.transform.right *
-                (Mathf.Sin(t * 27f - streamElapsed * 20f) * 0.002f);
-            stream.positionCount = count + 1;
-            stream.SetPosition(count, next + wobble);
-            count++;
-            previous = next;
-            if (next.y < -2f) break;
+            for (int i = 1; i < StreamSegments; i++)
+            {
+                float flightTime = step * i;
+                Vector3 next = origin + velocity * flightTime +
+                               Vector3.down * (0.5f * streamGravity *
+                                               flightTime * flightTime);
+                // Physical collision is evaluated BEFORE visual wobble.
+                if (TryFindStreamImpact(previous, next,
+                                        out Vector3 impact, out bool hitWater,
+                                        out bool hitToilet))
+                {
+                    stream.positionCount = i + 1;
+                    streamHighlight.positionCount = i + 1;
+                    SetVisualPoint(i, impact);
+                    drawnStreamCount = i + 1;
+                    streamInBowl = hitWater;
+                    streamHittingToilet = hitToilet;
+                    splashPosition = impact;
+                    break;
+                }
+
+                float u = i / (StreamSegments - 1f);
+                float envelope = Mathf.Sin(u * Mathf.PI);
+                Vector3 point = next +
+                    right * (Mathf.Sin(u * 43f - streamElapsed * 30f) *
+                             streamWobble * envelope) +
+                    up * (Mathf.Cos(u * 29f - streamElapsed * 25f) *
+                          streamWobble * 0.3f * envelope);
+                stream.positionCount = i + 1;
+                streamHighlight.positionCount = i + 1;
+                SetVisualPoint(i, point);
+                drawnStreamCount = i + 1;
+                previous = next;
+                if (next.y < -2f) break;
+            }
         }
 
-        // Don't show the water splash if the player pees on the wall/floor.
+        // Small pulses keep the line alive even when the aim stays still.
+        stream.widthMultiplier = streamWidth *
+            (0.93f + 0.09f * Mathf.Sin(streamElapsed * 31f));
+        streamHighlight.widthMultiplier = streamWidth * 0.30f *
+            (0.85f + 0.15f * Mathf.Sin(streamElapsed * 37f));
+        AnimatePeeParticles();
+
         if (!streamInBowl) return;
+        // Ring ripple is water-only; dry porcelain receives splash flecks.
         ripple.enabled = true;
         float phase = (streamElapsed % 0.42f) / 0.42f;
         float radius = Mathf.Lerp(0.012f, 0.06f, phase);
@@ -783,6 +936,55 @@ public sealed class ToiletPuzzleInteractable : MonoBehaviour
                 Mathf.Cos(angle) * radius, 0f, Mathf.Sin(angle) * radius));
         }
         ripple.widthMultiplier = 0.005f * (1f - phase * 0.75f);
+    }
+
+    private void AnimatePeeParticles()
+    {
+        if (drawnStreamCount < 2)
+        {
+            HideStreamParticles();
+            return;
+        }
+        for (int i = 0; i < DropletCount; i++)
+        {
+            Transform droplet = droplets[i];
+            if (droplet == null) continue;
+            float u = Mathf.Repeat(streamElapsed * dropletFlowSpeed +
+                                   (float)i / DropletCount, 1f);
+            float position = u * (drawnStreamCount - 1f);
+            int index = Mathf.Min(Mathf.FloorToInt(position), drawnStreamCount - 2);
+            float blend = position - index;
+            Vector3 forward = drawnStreamPoints[index + 1] - drawnStreamPoints[index];
+            droplet.position = Vector3.Lerp(drawnStreamPoints[index],
+                                            drawnStreamPoints[index + 1], blend);
+            if (forward.sqrMagnitude > 0.00001f)
+                droplet.rotation = Quaternion.FromToRotation(Vector3.up, forward.normalized);
+            float pulse = 0.75f + 0.25f * Mathf.Sin(streamElapsed * 23f + i * 2f);
+            float size = streamWidth * pulse;
+            droplet.localScale = new Vector3(size * 0.55f, size * 1.4f, size * 0.55f);
+            if (!droplet.gameObject.activeSelf) droplet.gameObject.SetActive(true);
+        }
+
+        for (int i = 0; i < SplashCount; i++)
+        {
+            Transform splash = splashes[i];
+            if (splash == null) continue;
+            if (!streamHittingToilet)
+            {
+                if (splash.gameObject.activeSelf) splash.gameObject.SetActive(false);
+                continue;
+            }
+            float phase = Mathf.Repeat(streamElapsed * 4.5f + i * 0.23f, 1f);
+            float angle = i * 2f * Mathf.PI / SplashCount;
+            float spread = 0.040f * phase;
+            splash.position = splashPosition +
+                new Vector3(Mathf.Cos(angle) * spread,
+                            0.005f + Mathf.Sin(phase * Mathf.PI) * 0.025f,
+                            Mathf.Sin(angle) * spread);
+            float size = streamWidth * (0.7f - 0.4f * phase);
+            splash.localScale = new Vector3(size, size, size);
+            if (!splash.gameObject.activeSelf) splash.gameObject.SetActive(true);
+        }
     }
 
     private bool TryFindStreamImpact(Vector3 from, Vector3 to,
