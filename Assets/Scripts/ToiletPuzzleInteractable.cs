@@ -188,9 +188,9 @@ public sealed class ToiletPuzzleInteractable : MonoBehaviour
         }
         if (!clicked && !pressedE) return;
 
-        // Same raycast strategy as RadioInteractable: center-screen when
-        // locked, otherwise the actual mouse pointer. Click a toilet mesh to
-        // start the animation, regardless of distance (within camera range).
+        // Click the toilet under the fixed center-screen crosshair.
+        // Mouse position never selects the toilet; moving the mouse only
+        // rotates the camera to move the crosshair and aim the stream.
         if (clicked && TryGetLookHit(out RaycastHit lookHit, playerCamera.farClipPlane))
         {
             if (IsToiletHit(lookHit.collider))
@@ -367,14 +367,10 @@ public sealed class ToiletPuzzleInteractable : MonoBehaviour
 
     private bool TryGetLookHit(out RaycastHit hit, float maxDistance)
     {
-        // Follow RadioInteractable's ScreenPointToRay convention exactly:
-        // first-person view uses the center crosshair; if the cursor is
-        // unlocked, use its on-screen position instead.
-        Vector2 point = Cursor.lockState == CursorLockMode.Locked ||
-                        Mouse.current == null
-            ? new Vector2(Screen.width * 0.5f, Screen.height * 0.5f)
-            : Mouse.current.position.ReadValue();
-        Ray ray = playerCamera.ScreenPointToRay(point);
+        // Purgatory uses a fixed first-person crosshair for toilet interactions.
+        // Always shoot from screen center, even if the OS cursor becomes unlocked.
+        // This same ray is used by the hover hint and vial pickup.
+        Ray ray = playerCamera.ViewportPointToRay(new Vector3(0.5f, 0.5f, 0f));
         return Physics.Raycast(ray, out hit, maxDistance,
                                Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore);
     }

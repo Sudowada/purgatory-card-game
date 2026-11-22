@@ -27,10 +27,14 @@ required. The change lives in `feature/toilet-mouse-aim-after-click`.
 
 ## Interaction flow
 
-- In **Exploration**, **left-click the toilet** once while its mesh is
-  under the crosshair or mouse pointer. The click can be from anywhere
-  you can see it, provided the click ray reaches the toilet's collider.
-- The use animation and pee stream begin **immediately on click**.
+- In **Exploration**, put the **fixed crosshair at the center of the screen**
+  over any toilet mesh and **left-click once**. The actual mouse cursor
+  position does not matter, even when the cursor is unlocked.
+  You can click from anywhere the toilet is visible and unobstructed,
+  provided the crosshair ray reaches its collider.
+- The use animation and pee stream begin **immediately on click**. After
+  clicking, moving the mouse aims the stream through normal first-person
+  camera look; no further clicks are needed to aim.
 - For ~**2.5 seconds**, use the **mouse** to steer the camera and stream.
   Walking is locked, but looking left/right/up/down remains active.
   The stream follows a ballistic arc and can hit the wall, floor or rim.
