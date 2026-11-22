@@ -37,6 +37,8 @@ public sealed class ToiletPuzzleInteractable : MonoBehaviour
 
     [Header("Use animation")]
     [SerializeField, Min(0.3f)] private float peeDuration = 2.5f;
+    [Tooltip("Seconds after clicking before the visible pee stream and audio start. The camera/use animation begins immediately.")]
+    [SerializeField, Range(0f, 1.5f)] private float peeStartDelay = 0.4f;
     [Tooltip("Minimum total seconds of hitting the bowl during one use to earn a water stage. Missed uses don't fill it.")]
     [SerializeField, Range(0.05f, 2f)] private float requiredBowlHitSeconds = 0.35f;
     [Tooltip("Pee stream launch speed. Higher values travel farther with less drop.")]
@@ -49,7 +51,7 @@ public sealed class ToiletPuzzleInteractable : MonoBehaviour
     [SerializeField, Range(0.04f, 0.35f)] private float bowlHitRadiusX = 0.13f;
     [Tooltip("Bowl target's half-length (world meters). Should fit inside the visible water surface.")]
     [SerializeField, Range(0.04f, 0.35f)] private float bowlHitRadiusZ = 0.16f;
-    [Tooltip("Optional Animator to trigger when use begins; the pee stream starts the same frame.")]
+    [Tooltip("Optional Animator to trigger immediately on click. The pee stream begins after Pee Start Delay.")]
     [SerializeField] private Animator useAnimator;
     [SerializeField] private string useAnimationTrigger = "Use";
     [Tooltip("Gentle camera bob in meters while using the toilet.")]
@@ -104,6 +106,7 @@ public sealed class ToiletPuzzleInteractable : MonoBehaviour
     private float bowlHitTimeThisUse;
     private Vector3 splashPosition;
     private bool streamInBowl;
+    private bool streamStarted;
     private bool peeing;
     private bool cameraPoseSaved;
     private bool previousMovementLocked;
@@ -278,6 +281,7 @@ public sealed class ToiletPuzzleInteractable : MonoBehaviour
         streamElapsed = 0f;
         bowlHitTimeThisUse = 0f;
         streamInBowl = false;
+        streamStarted = false;
         cameraLocalStartPosition = playerCamera.transform.localPosition;
         cameraPoseSaved = true;
 
@@ -290,9 +294,15 @@ public sealed class ToiletPuzzleInteractable : MonoBehaviour
             playerController.MovementLocked = true;
         }
 
+        // The use/camera animation begins on click. The visible stream and
+        // pee sound start shortly afterward, rather than on the click frame.
         if (useAnimator != null && !string.IsNullOrEmpty(useAnimationTrigger))
             useAnimator.SetTrigger(useAnimationTrigger);
-        BeginStream(); // Stream starts together with the click animation.
+
+        float effectiveStartDelay = Mathf.Min(peeStartDelay, Mathf.Max(0f, peeDuration - 0.05f));
+        if (debugClicks)
+            Debug.Log("[ToiletPuzzle] Use animation started; pee stream in " +
+                      effectiveStartDelay.ToString("0.00") + "s.", this);
 
         float elapsed = 0f;
         bool completed = false;
@@ -322,10 +332,21 @@ public sealed class ToiletPuzzleInteractable : MonoBehaviour
                 playerController.LookPitchOffset =
                     previousLookPitchOffset + cameraTilt * lean;
 
-            streamElapsed += Time.deltaTime;
-            UpdateStreamVisuals();
-            if (streamInBowl)
-                bowlHitTimeThisUse += Time.deltaTime;
+            if (!streamStarted && elapsed >= effectiveStartDelay)
+            {
+                streamStarted = true;
+                BeginStream();
+                if (debugClicks)
+                    Debug.Log("[ToiletPuzzle] Pee stream started after " +
+                              elapsed.ToString("0.00") + "s.", this);
+            }
+            if (streamStarted)
+            {
+                streamElapsed += Time.deltaTime;
+                UpdateStreamVisuals();
+                if (streamInBowl)
+                    bowlHitTimeThisUse += Time.deltaTime;
+            }
             yield return null;
         }
 
@@ -371,6 +392,7 @@ public sealed class ToiletPuzzleInteractable : MonoBehaviour
         if (!peeing && !cameraPoseSaved) return;
         peeing = false;
         streamInBowl = false;
+        streamStarted = false;
         if (stream != null) stream.enabled = false;
         if (ripple != null) ripple.enabled = false;
 
@@ -802,9 +824,11 @@ public sealed class ToiletPuzzleInteractable : MonoBehaviour
         string hint = "";
         if (peeing)
         {
-            hint = streamInBowl
-                ? "AIM WITH MOUSE  |  HITTING WATER"
-                : "AIM WITH MOUSE  |  MISSED THE BOWL";
+            hint = !streamStarted
+                ? "GETTING READY  |  PEE STARTING..."
+                : streamInBowl
+                    ? "AIM WITH MOUSE  |  HITTING WATER"
+                    : "AIM WITH MOUSE  |  MISSED THE BOWL";
         }
         else if (TryGetLookHit(out RaycastHit hit, interactionDistance) &&
                  IsVialHit(hit.collider))
