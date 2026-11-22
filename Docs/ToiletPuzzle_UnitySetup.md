@@ -1,96 +1,95 @@
-# Purgatory prison toilet puzzle — click-to-use prototype
+# Purgatory toilet puzzle: click to start, mouse to aim
 
-The toilet puzzle is on `main` after PR #10. This debugging improvement
-is proposed separately in PR #12. The Blender FBX and actual Unity scene/prefab still live in your
-local project; they are not modified through GitHub.
+This update extends the already merged click-to-pee puzzle. **Left-clicking the
+toilet** begins the use animation. While the stream is flowing, **move the
+mouse** to aim. The player can look around freely but **WASD movement is
+temporarily locked**. Neither holding P nor keeping the mouse button held is
+required. The change lives in `feature/toilet-mouse-aim-after-click`.
 
-## Scene hookup
+## Scene setup
 
-1. Add **ToiletPuzzleInteractable** to your **Toilet** scene-root object.
-2. Keep **Auto Add Click Colliders** enabled on the toilet script.
-   It adds non-trigger MeshColliders at runtime to imported toilet mesh parts
-   that do not have a collider. Existing colliders remain untouched.
-   An opaque room/wall collider in front of the toilet will still block clicks.
-   If your model already has appropriate colliders, you can turn this off.
-   Enable **Debug Clicks** to log the hit collider, hierarchy path, or blocked
-   interaction reason in Play Mode. A one-time **[ToiletPuzzle] Started** log
-   appears even with debugging disabled. If it is missing, check the component
-   is attached and enabled on the toilet in the currently loaded scene.
-3. **Toilet Model Root** is optional. If the toilet FBX's Torus/Cylinder/Cube
-   meshes are NOT children of the GameObject with ToiletPuzzleInteractable,
-   drag the parent of those meshes into this field, so the click test knows
-   that those meshes are part of the toilet. Otherwise leave it empty.
-4. Add a child Empty GameObject **WaterAnchor** and position it at the **center
-   of the bowl's lowest water level**. Assign it to **Water Anchor**.
-5. Leave **Water Surface** empty to generate a flat 12-sided water placeholder,
-   or assign a properly positioned water mesh.
-6. Optional: assign **Player Camera** (falls back to Camera.main),
-   **Player Controller**, **Vial Prefab** and **Vial Rest Point**. Without a
-   Vial Prefab, the script generates a temporary corked vial.
-7. Optional: assign an **AudioSource** with clips for Pee, Water,
-   Reveal and Pickup. For a real animation, assign **Use Animator** and
-   its **Use Animation Trigger** (default `Use`). **Without an Animator**,
-   the script still performs a small procedural camera dip.
+1. Attach **ToiletPuzzleInteractable** to the toilet's scene root. Enable
+   **Auto Add Click Colliders** or provide non-trigger colliders on the
+   actual porcelain meshes. **Debug Clicks** will log any blocked clicks
+   and the collider hit by the click raycast.
+2. If the imported FBX Torus/Cylinder/Cube mesh parts are outside the
+   GameObject carrying the script, assign their shared parent into
+   **Toilet Model Root**. Otherwise leave it empty.
+3. Create **WaterAnchor** (an empty transform) in the bowl at the lowest
+   intended water height. Assign it to the script's **Water Anchor** field.
+   Leave **Water Surface** empty to get a 12-sided temporary mesh.
+   You don't need to create a Water Material yet.
+4. Assign the **Player Camera** and **Player Controller** if needed,
+   or let the script find Camera.main and FirstPersonController.
+5. Optional: provide **Use Animator** (trigger `Use`), Pee/Water/
+   Reveal/Pickup audio clips, and a **Vial Prefab**; the puzzle runs with
+   the automatic camera dip and placeholder vial if these are empty.
 
-## Playing
+## Interaction flow
 
-- During **Exploration**, **look at the toilet and left-click**.
-  Just like the radio: with a locked cursor, click the center crosshair;
-  with an unlocked cursor, click the toilet mesh under the mouse pointer.
-- A short use animation begins **immediately**. At that same moment,
-  the pale-yellow procedural stream starts pouring toward the water, with
-  a little ripple where it lands.
-- No separate Hold-P input and **no manual aiming minigame**. One click is
-  one use, lasting **1.6 seconds** by default. You can click again as soon as
-  it ends; there is no cooldown or required battle between uses.
-- The toilet can be clicked **from anywhere it is visible**: unlike the
-  collectible pickup, the toilet interaction has no nearby-distance limit.
-  There must still be a direct camera raycast to the toilet collider.
-- Each completed use raises the water one stage. After **four uses**, a
-  corked vial floats up and bobs.
-- Walk toward the vial, aim at it, and press **E** or **left-click**
-  within 2.75 meters (default) to collect. The collectible appears as a
-  **Sealed Vial** in the existing CollectiblesTable.
-- The vial is one-time and persists via PlayerPrefs and ShopManager. Peeing
-  remains available afterward, but the water level stops rising. To
-  replay in the editor without clearing your progress, toggle
-  **Ignore Saved Completion For Testing** on the toilet component.
+- In **Exploration**, **left-click the toilet** once while its mesh is
+  under the crosshair or mouse pointer. The click can be from anywhere
+  you can see it, provided the click ray reaches the toilet's collider.
+- The use animation and pee stream begin **immediately on click**.
+- For ~**2.5 seconds**, use the **mouse** to steer the camera and stream.
+  Walking is locked, but looking left/right/up/down remains active.
+  The stream follows a ballistic arc and can hit the wall, floor or rim.
+- The prompt says **HITTING WATER** when the stream is reaching the bowl,
+  or **MISSED THE BOWL** when it isn't. Ripple shows on successful hits.
+- For each animation to count toward the secret, at least **0.35 seconds
+  during that session** must reach the water. If it misses entirely,
+  that click does **not** raise the water.
+- **Four successful uses** raise the water to its capped maximum, then
+  a sealed corked vial floats up. Approach and **left-click or press E**
+  within 2.75 m to collect it; it appears in **CollectiblesTable**.
+- Each use is automatic once started; no cooldown or battle requirement.
+  After an animation finishes, the mouse stays facing wherever the
+  player last aimed—no snap back to the original direction.
 
-## Useful Inspector values
+## Main Inspector controls
 
-| Property | Default | Notes |
+| Property | Default | Purpose |
 | --- | --- | --- |
-| Pee Duration | 1.6 s | Length of one automatic animation |
-| Camera Dip | 0.035 m | Small first-person head movement |
-| Camera Tilt | 5 degrees | Camera leans downward and returns |
-| Use Animator | none | Optional real use animation |
-| Use Animation Trigger | Use | Trigger parameter on Animator |
-| Uses To Reveal | 4 | Full uses needed to reveal vial |
-| Total Water Rise | 0.10 m | Tune for depth of your bowl |
-| Interaction Distance | 2.75 m | Pickup only; no toilet-click range limit |
-| Stream Width | 0.011 m | Width of stylized stream |
+| Pee Duration | 2.5s | How long each click activates the stream |
+| Required Bowl Hit Seconds | 0.35s | Time on water needed to count as a success |
+| Stream Launch Speed | 9.5 m/s | Faster stream reaches further |
+| Stream Gravity | 9 m/s² | Curves downward; aim higher farther away |
+| Stream Flight Time | 1.6s | Maximum simulated arc duration |
+| Bowl Hit Radius X/Z | 0.13/0.16 m | Scoring ellipse at current water surface |
+| Camera Dip | 0.035m | Temporary first-person head movement |
+| Camera Tilt | 5 degrees | Added pitch, preserving mouse look |
+| Uses To Reveal | 4 | Successful pee sessions needed |
+| Total Water Rise | 0.10m | Water movement; keep under porcelain rim |
 
-## Quick Play Mode checks
+## Play Mode checklist
 
-1. Walk near or look at toilet from across the prison cell.
-   The imported model needs mesh renderers (and the script's automatic collider
-   setup enabled) so the click ray has a solid surface to detect.
-2. Center the crosshair on the toilet and **left-click**.
-3. Confirm the camera dips a little and the stream starts **immediately**,
-   then ends after about 1.6 seconds. The water rises.
-4. Click four times; confirm the corked vial surfaces.
-5. Move close, click vial, and verify **Sealed Vial** in collectibles.
-6. Verify clicks do nothing in card mode, radio, shop or settings.
+1. Look at the toilet and left-click.
+2. Confirm pee stream starts and camera dips, while mouse movement still
+   changes the aim.
+3. Move mouse away from the bowl. The stream should hit another surface,
+   the ripple disappear, and the status say **MISSED THE BOWL**.
+4. Aim into water for at least 0.35s within the same 2.5s session.
+   After the animation ends, the water should rise once.
+5. Repeat for four successful uses and collect the vial.
+6. While using the toilet, press WASD: the player should stay in place.
+   After the stream ends, normal movement should return.
+7. Verify CardGame, shop, radio, and settings don't allow starting
+   new pee interactions.
 
-## Prototype notes
+## Troubleshooting
 
-- The stream is a simple automatically targeted curved **LineRenderer**,
-  with a splash ripple. This is deliberately **not ballistic aiming**:
-  users do not have to compensate for gravity.
-- A real character-body / hand animation has **not** been authored in this
-  code. An optional Animator trigger can play an existing animation, while
-  the script adds a slight camera movement even when none is assigned.
-- Accurate bowl placement matters. Set **WaterAnchor** inside the opening,
-  and adjust **Total Water Rise** until the surface remains inside the toilet.
-- Repo code has been structurally reviewed, but **Unity compilation and
-  in-editor testing are not complete**. Leave the PR open until tested.
+- **No use animation after clicking:** Enable **Debug Clicks**, check
+  `[ToiletPuzzle] Started` and `[ToiletPuzzle] Click ...` messages.
+  Confirm WaterAnchor and the correct FBX hierarchy.
+- **The stream doesn't reach water even when aimed into the opening:**
+  The porcelain's MeshCollider or a large BoxCollider may cover the
+  bowl's interior. Adjust its shape or target radius and position.
+- **Water does not rise:** A use must finish and accumulate enough
+  successful water hit time; enable Debug Clicks for miss logging.
+- **Mouse cannot aim:** Make sure the **FirstPersonController** script
+  from the same feature branch was updated as well; it adds
+  `MovementLocked` and `LookPitchOffset`, allowing looking without walking.
+- **Existing assets:** Water surface, stream and vial are temporary procedural
+  visuals. Real art, sound and character movement can be fitted later.
+- **Testing status:** Source reviewed, but not Unity-compiled or Play Mode
+  tested in the user's scene.
