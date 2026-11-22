@@ -120,10 +120,16 @@ public sealed class ToiletPuzzleInteractable : MonoBehaviour
     private void Start()
     {
         if (playerCamera == null) playerCamera = Camera.main;
+        // Resolve the controller from this camera first, as ShopWindow does.
+        if (playerController == null && playerCamera != null)
+            playerController = playerCamera.GetComponentInParent<FirstPersonController>();
         if (playerController == null)
             playerController = FindFirstObjectByType<FirstPersonController>();
         if (audioSource == null) audioSource = GetComponent<AudioSource>();
-        if (autoAddClickColliders) EnsureToiletClickColliders();
+        // A deliberately assigned interaction collider takes precedence.
+        // Don't auto-add competing MeshColliders in that configuration.
+        if (autoAddClickColliders && interactionCollider == null)
+            EnsureToiletClickColliders();
         if (debugClicks)
             Debug.Log("[ToiletClick] Ready on '" + name + "'. Camera='" +
                       (playerCamera != null ? playerCamera.name : "MISSING") +
