@@ -4,7 +4,7 @@ This update extends the already merged click-to-pee puzzle. **Left-clicking the
 toilet** begins the use animation. While the stream is flowing, **move the
 mouse** to aim. The player can look around freely but **WASD movement is
 temporarily locked**. Neither holding P nor keeping the mouse button held is
-required. The change lives in `feature/toilet-mouse-aim-after-click`.
+required. This click-detection update is on `fix/toilet-shopwindow-click-pattern` until merged into `main`.
 
 ## Scene setup
 
