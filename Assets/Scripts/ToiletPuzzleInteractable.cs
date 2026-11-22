@@ -114,6 +114,7 @@ public sealed class ToiletPuzzleInteractable : MonoBehaviour
     private LineRenderer stream;
     private LineRenderer streamHighlight;
     private LineRenderer ripple;
+    private Transform particleRoot;
     private Transform floatingVial;
     private Collider floatingVialCollider;
     private GameObject runtimeWater;
@@ -1094,9 +1095,11 @@ public sealed class ToiletPuzzleInteractable : MonoBehaviour
                     100f * toiletHitTimeThisUse /
                     Mathf.Max(0.0001f, streamActiveTimeThisUse));
                 int neededPercent = Mathf.RoundToInt(requiredToiletHitFraction * 100f);
-                hint = (streamHittingToilet ? "HITTING TOILET" : "MISSED TOILET") +
-                       "  |  " + hitPercent + "% ON TARGET (NEED " +
-                       neededPercent + "%)";
+                string hitLabel = streamHittingToilet
+                    ? (assistedBowlAim ? "IN THE BOWL" : "HITTING TOILET")
+                    : "MISSED TOILET";
+                hint = hitLabel + "  |  " + hitPercent +
+                       "% ON TARGET (NEED " + neededPercent + "%)";
             }
         }
         else if (TryGetLookHit(out RaycastHit hit, interactionDistance) &&
@@ -1111,7 +1114,7 @@ public sealed class ToiletPuzzleInteractable : MonoBehaviour
         }
 
         if (hint.Length == 0) return;
-        float width = 360f;
+        float width = 430f;
         GUI.Box(new Rect((Screen.width - width) / 2f,
                          Screen.height * 0.74f, width, 30f), hint);
     }
@@ -1125,7 +1128,9 @@ public sealed class ToiletPuzzleInteractable : MonoBehaviour
     private void OnDestroy()
     {
         if (stream != null) Destroy(stream.gameObject);
+        if (streamHighlight != null) Destroy(streamHighlight.gameObject);
         if (ripple != null) Destroy(ripple.gameObject);
+        if (particleRoot != null) Destroy(particleRoot.gameObject);
         if (runtimeWater != null) Destroy(runtimeWater);
         if (runtimeWaterMesh != null) Destroy(runtimeWaterMesh);
         if (floatingVial != null) Destroy(floatingVial.gameObject);
