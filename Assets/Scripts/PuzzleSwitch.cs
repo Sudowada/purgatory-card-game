@@ -12,6 +12,7 @@ public class PuzzleSwitch : MonoBehaviour
     [Header("References")]
     public Camera playerCamera;
     public float interactDistance = 3f;
+    public bool clickOnly;
 
     [Header("Lever Handle")]
     public Transform leverHandle;
@@ -143,6 +144,7 @@ public class PuzzleSwitch : MonoBehaviour
         _useWorldInteraction = true;
         if (camera != null) playerCamera = camera;
         _worldController = controller;
+        ScreenReticle.EnsureExists();
     }
 
     void UpdateWorldInteraction()
@@ -157,13 +159,19 @@ public class PuzzleSwitch : MonoBehaviour
 
         if (!_worldPress)
         {
-            if (!mouse.leftButton.wasPressedThisFrame) return;
-
             var ray = playerCamera.ViewportPointToRay(new Vector3(0.5f, 0.5f));
             if (!Physics.Raycast(ray, out var hit, interactDistance,
                     Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore) ||
                 hit.collider.GetComponentInParent<PuzzleSwitch>() != this)
                 return;
+
+            ScreenReticle.Instance?.ShowInteractionHint();
+            if (!mouse.leftButton.wasPressedThisFrame) return;
+            if (clickOnly)
+            {
+                OnClicked();
+                return;
+            }
 
             _worldPress = true;
             _worldDragDelta = 0f;

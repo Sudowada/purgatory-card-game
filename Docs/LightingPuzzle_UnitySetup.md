@@ -1,57 +1,39 @@
-# Wall-writing lighting puzzle
+# Two-rocker wall puzzle
 
-## Open the playtest
+## Play the sample
 
-1. Open the project with the editor version in `ProjectSettings/ProjectVersion.txt` (2022.3.16f1). Let Unity resolve the Input System package. The project uses **Both** under **Player → Active Input Handling**, so the existing legacy input still works.
-2. Choose **Tools → Purgatory → Open Lighting Puzzle Playtest**. Unity prompts about unsaved changes before opening a generated cell. You can save this scene under a new name to reopen it later.
-3. Enter Play. Use **WASD** and mouse look. The blue switch starts straight ahead. Aim the center dot at a switch and left-click to flip it, or hold left-click and drag vertically to choose a position. Turn **Red** and **Blue** on and leave **Green** off.
-4. Turn right and aim the center dot at the writing on the same wall. Left-click. The writing flashes and a keyhole grows out of the wall just below it. Click the keyhole to show **A key is needed.**
+1. Open the project in Unity 2022.3.16f1. The project uses **Both** under **Player → Active Input Handling**.
+2. Choose **Tools → Purgatory → Open Lighting Puzzle Playtest**, then enter Play Mode. Walk with WASD and aim with the mouse.
+3. Aim at the right rocker. The faint center dot grows and brightens when the target is usable. Left-click to power on the blue light. Aim at the left rocker and left-click to select violet.
+4. Look right for the writing. Aim at it and left-click to flash the text and grow the wall keyhole. Click the keyhole to see **A key is needed.**
 
-The playtest uses placeholder geometry and text. Its save ID is separate from the production default. The existing build opens the card scene.
+The sample uses its own discovery save. In Edit Mode, select the clue component and choose **Clear Saved Clue Discovery** from its context menu to replay from the beginning.
 
-## Wire an existing cell in the Inspector
+## Install in the scene you use
 
-Use the existing first-person camera, electrical box and room lights. Keep the clue controller active and put the two click targets on separate GameObjects. To add the starter writing and keyhole to the scene you already have open, place an empty, unit-scale anchor on the inside wall surface. Orient its local **−Z** toward the player. Select the anchor and choose **Tools → Purgatory → Add Lighting Clue at Selected Wall Anchor**. Check the camera and controller assignments, fill in the light slots, and save your scene. Move the anchor a little farther into the cell if the wall collider intercepts clicks.
+Create an empty, unit-scale anchor about 1.45 m above the floor on the inside wall face, with its local −Z pointing into the room. Select it and run **Tools → Purgatory → Add Two-Rocker Puzzle at Selected Wall Anchor**. The command adds the wired switch panel and clue to the open scene. It places the writing 0.8 m to the right of the anchor. Move the clue and lamp as needed so the light covers the writing and both click targets sit just in front of the wall collider. Save the scene.
 
-```text
-Electrical Box                         SwitchPanelInteract
-  Red Switch                           PuzzleSwitch → Red Room Light
-  Blue Switch                          PuzzleSwitch → Blue Room Light
-  Green Switch                         PuzzleSwitch → Green Room Light
-Wall Clue                              LightConditionClue
-  Wall Writing                         TextMeshPro + Box Collider
-    Writing Glow                       Optional purple point Light
-  Wall Keyhole                         Box Collider
-    Keyhole Art
-```
+The tool uses the existing first-person camera. It needs a 3D forward renderer for the lamp to illuminate the room. The sample camera uses **LightingPlaytestRenderer** in renderer slot 2.
 
-| Field | Assignment |
+| Object or component | Inspector setup |
 | --- | --- |
-| Puzzle Id | A unique, stable ID for each independent clue. The scene tool assigns one automatically. |
-| Player Camera / Player Controller | The first-person camera and its controller. Assign the controller to block clicks while zoomed into another interaction. |
-| Required Lights | Red and blue room **Light** components. |
-| Forbidden Lights | Green room **Light** component. Leave unrelated lights out of both lists. |
-| Required Colors / Forbidden Colors | Optional rules for a room Light that changes color. Assign the Light and copy the matching up/down color from its switch. Clear the starter on/off slots if this clue uses color rules alone. |
-| Writing / Writing Target | World-space TextMeshPro and a dedicated, non-trigger collider on its object or parent. |
-| Writing Glow | Optional point Light under Writing Target. Set a low idle intensity. The flash temporarily multiplies it. |
-| Keyhole Target | Dedicated non-trigger collider on the keyhole root, with the art underneath it. |
-| On Keyhole Clicked | Connect a locked-message response or a future lamp-key handler. The playtest binds this to its locked message. |
+| SwitchPanelInteract | Assign the player camera, first-person controller and both switches. Enable **Use World Interaction**. |
+| Left rocker | **PuzzleSwitch** set to **Binary**, **Click Only** enabled. **Binary Up Color** starts blue and **Binary Down Color** is violet. |
+| Right rocker | **PuzzleSwitch** set to **Lever**, **Click Only** enabled. It starts off. |
+| TwoRockerLightCircuit | Assign **Color Rocker**, **Power Rocker**, and **Room Light**. The circuit controls this light. Leave the individual switches' light outputs empty. |
+| LightConditionClue | **Required Colors** contains the room light and the left rocker's violet color. The lamp must be active with positive intensity. Other clues can still use required or forbidden lights and colors. |
+| On Keyhole Clicked | The starter shows a locked message. This event can be wired to the future lamp-key interaction. |
 
-Disable both target GameObjects in the authored scene. Place their collider faces slightly into the cell from the wall so the wall collider sits behind them. Remove colliders on child art that could intercept clicks. Keep both targets on layers included in default physics raycasts. Start with a 3 m interaction distance.
+### Replace the starter geometry in Blender
 
-A configured light counts as on when its object and component are active and its intensity is positive. Assign independent color emitters to **Lever Light** or use a **Binary Light** that can change between two colors. A color rule matches only an active light with each RGB channel within 0.02 of the assigned color. Use a 3D forward renderer on the cell camera so the room lights illuminate the wall. The generated camera selects **LightingPlaytestRenderer** in renderer slot 2.
-
-On **SwitchPanelInteract**, keep **Use World Interaction** enabled and assign the existing camera, controller, and switches. Put a non-trigger collider on each switch root or its moving handle. Assign each **Lever Handle** to the animated pivot, with its local Y rotation axis aligned to the actual hinge and its up/down angles set for that model. The crosshair captures the switch until release and temporarily holds mouse look while dragging. A click and a completed drag use the original switch and color-sequence callbacks. Existing middle detents still work. Turn off **Use World Interaction** to use the legacy panel focus interaction during comparison testing.
-
-Discovery is saved when the player clicks the writing. Scene reload restores the keyhole directly. With Play Mode stopped, open the clue component's context menu and select **Clear Saved Clue Discovery** to clear just that clue's PlayerPrefs entry.
+The mounting plate is **30 × 20 cm**. Each rocker face is **10 × 13 cm**, and the faces have a **3 cm** gap. The stationary colliders are **12 × 15 cm** each with a **1 cm** gap. Keep each moving mesh under its switch's **Lever Handle** pivot and align the pivot's local Y with the hinge. Keep the existing colliders when swapping meshes. The generated switches have a 2.5 m interaction range.
 
 ## Playtest checklist
 
-- [ ] Clear the playtest clue's saved discovery. Verify that the writing and keyhole are absent on entry. Aim at the intended writing location and left-click to confirm there is no reveal.
-- [ ] Try red alone, blue alone, and all three colors. Verify that the writing remains hidden. The wall should still respond to the room lights.
-- [ ] Turn green off with red and blue on. Verify that glowing writing appears. Break the combination and confirm it disappears before discovery.
-- [ ] Restore the combination in the reverse switch order using click and drag. Verify the camera stays in place and releases mouse look afterward. Try the existing sequence puzzle and check that each release submits one step.
-- [ ] Click the writing within 3 m. Verify the flash and short keyhole growth. Try a click beyond 3 m and a click with an intervening collider before completing discovery.
-- [ ] Click the resulting keyhole and check the locked message. Change the lights, including switching all three off. Verify the keyhole remains clickable and the writing stays hidden.
-- [ ] Stop and restart Play Mode. Quit and reopen Unity, then regenerate the cell or reopen the saved playtest scene. Verify that the keyhole returns immediately and remains clickable with all three switches off.
-- [ ] Clear just the clue's saved discovery again and confirm it starts hidden. In the production cell, check that radio, shop and settings block switch and clue clicks. Start dragging, then switch away from the game window and verify mouse look comes back without submitting a switch input.
+- [ ] Aim at the space between the rockers, at each face, and at each face beyond 2.5 m. The crosshair brightens only over an in-range rocker. Verify both faces are easy to select from 1.5–2 m.
+- [ ] With power off, click the left rocker. The paddle latches into violet without lighting the room. Power on and verify the lamp turns violet immediately. Toggle power off and back on and verify it retains the selected color.
+- [ ] Verify that power off and power on with blue selected both hide the writing. Select violet with the lamp on to reveal it. Toggle blue and violet before discovery to confirm the clue follows the lamp.
+- [ ] Hold left-click or move the mouse during a press. Verify one flip per press, with normal mouse look and no zoom.
+- [ ] Aim at the writing and click. Verify the text flashes and the keyhole becomes clickable once its animation completes. Check the locked message and verify the keyhole still works with the light off.
+- [ ] Restart the scene and then restart the game. Verify the keyhole returns without replaying the animation. Clear that clue's saved discovery in Edit Mode to verify the original state.
+- [ ] In the cell scene, verify existing switch sequences, radio, shop, and settings still work. Over an obstructed switch or clue, verify there is no highlight or interaction.

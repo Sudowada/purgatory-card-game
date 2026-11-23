@@ -49,6 +49,8 @@ public sealed class LightConditionClue : MonoBehaviour
     private float baseGlowIntensity;
     private string SaveKey => "light_clue_" + puzzleId + "_discovered";
 
+    private void Start() => ScreenReticle.EnsureExists();
+
     private void OnEnable()
     {
         if (string.IsNullOrWhiteSpace(puzzleId) || playerCamera == null || writing == null ||
@@ -94,9 +96,11 @@ public sealed class LightConditionClue : MonoBehaviour
 
         ApplyVisibility();
         var target = discovered ? keyholeTarget : writingTarget;
-        if (!target.gameObject.activeInHierarchy || !FirstPersonController.AllowsWorldPuzzleInput(playerController) ||
-            Mouse.current?.leftButton.wasPressedThisFrame != true)
+        if (!target.gameObject.activeInHierarchy || !FirstPersonController.AllowsWorldPuzzleInput(playerController))
             return;
+
+        ScreenReticle.Instance?.ShowInteractionHint();
+        if (Mouse.current?.leftButton.wasPressedThisFrame != true) return;
 
         var ray = playerCamera.ViewportPointToRay(new Vector3(0.5f, 0.5f));
         if (!Physics.Raycast(ray, out var hit, interactDistance,
