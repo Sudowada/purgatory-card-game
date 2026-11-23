@@ -8,12 +8,40 @@ using UnityEngine.Rendering.Universal;
 public static class LightPuzzlePlaytestScene
 {
     private const string Props = "Assets/Models/modular_electric_cables_1k.blend/";
+    private const string FontPath = "Assets/Resources/Fonts/IMFellEnglish-Regular SDF.asset";
+
+    [MenuItem("Tools/Purgatory/Add Lighting Clue at Selected Wall Anchor")]
+    private static void AddToCurrentScene()
+    {
+        var anchor = Selection.activeTransform;
+        if (anchor == null || !anchor.gameObject.scene.IsValid())
+        {
+            EditorUtility.DisplayDialog("Lighting Puzzle", "Select a wall anchor in the current scene.", "OK");
+            return;
+        }
+
+        var controller = Object.FindObjectOfType<FirstPersonController>();
+        var camera = controller != null && controller.cameraTransform != null
+            ? controller.cameraTransform.GetComponent<Camera>()
+            : Camera.main;
+        var font = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(FontPath);
+        if (camera == null || font == null)
+        {
+            EditorUtility.DisplayDialog("Lighting Puzzle", "The current scene needs a first-person camera and the project's TMP font.", "OK");
+            return;
+        }
+
+        var clue = CreateWallClue(anchor, Vector3.zero, font, camera, controller);
+        clue.puzzleId = "cell_wall_keyhole_" + GUID.Generate();
+        Undo.RegisterCreatedObjectUndo(clue.gameObject, "Add Wall Lighting Clue");
+        EditorSceneManager.MarkSceneDirty(anchor.gameObject.scene);
+        Selection.activeGameObject = clue.gameObject;
+    }
 
     [MenuItem("Tools/Purgatory/Open Lighting Puzzle Playtest")]
     private static void Open()
     {
-        var font = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(
-            "Assets/Resources/Fonts/IMFellEnglish-Regular SDF.asset");
+        var font = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>(FontPath);
         if (font == null || font.material == null)
         {
             EditorUtility.DisplayDialog("Lighting Puzzle", "The existing IMFellEnglish TMP font asset could not be loaded.", "OK");
@@ -60,8 +88,7 @@ public static class LightPuzzlePlaytestScene
         panel.zoomTarget = zoom;
         panel.playerCamera = camera;
         panel.playerController = controller;
-        // Keep the demo in the ordinary close-up until E or Escape exits.
-        panel.parallaxStrength = panel.parallaxStrengthY = 0f;
+        panel.useWorldInteraction = true;
 
         var red = MakeSwitch("Red", new Color(1f, 0.12f, 0.18f), -0.42f, panel, font, dark);
         var blue = MakeSwitch("Blue", new Color(0.15f, 0.35f, 1f), 0f, panel, font, dark);
@@ -69,12 +96,25 @@ public static class LightPuzzlePlaytestScene
         panel.switches = new[] { red, blue, green };
 
         Text("Instructions", room, new Vector3(-1.4f, 2.04f, 3.97f), font, new Vector2(1.6f, 0.32f),
-            "WASD to move  /  Aim at a switch and press E\nClick switches  /  E or Esc to exit\nRed and blue together. Leave green dark.", Color.white);
+            "Aim at a switch. Click to flip or drag up/down.\nRed and blue together. Leave green dark.", Color.white);
 
+        var clue = CreateWallClue(room, new Vector3(1.05f, 1.6f, 3.9f), font, camera, controller);
+        clue.puzzleId = "light_playtest_wall_keyhole";
+        clue.requiredLights = new[] { red.leverLight, blue.leverLight };
+        clue.forbiddenLights = new[] { green.leverLight };
+        EditorSceneManager.MarkSceneDirty(scene);
+        Selection.activeGameObject = clue.gameObject;
+    }
+
+    private static LightConditionClue CreateWallClue(Transform parent, Vector3 position,
+        TMP_FontAsset font, Camera camera, FirstPersonController controller)
+    {
+        var metal = AssetDatabase.LoadAssetAtPath<Material>(Props + "ClockFrontRIm.mat");
+        var dark = AssetDatabase.LoadAssetAtPath<Material>("Assets/Materials/M_CardEdge.mat");
         var clueRoot = new GameObject("Lighting Clue");
         clueRoot.SetActive(false);
-        clueRoot.transform.SetParent(room, false);
-        clueRoot.transform.localPosition = new Vector3(1.05f, 1.6f, 3.9f);
+        clueRoot.transform.SetParent(parent, false);
+        clueRoot.transform.localPosition = position;
 
         var writing = Text("Wall Writing", clueRoot.transform, Vector3.forward * 0.05f, font, new Vector2(1.6f, 0.4f),
             "WHAT IS HIDDEN\nMAY STILL BE OPENED", new Color(0.85f, 0.55f, 1f));
@@ -107,30 +147,41 @@ public static class LightPuzzlePlaytestScene
         keyhole.SetActive(false);
 
         var clue = clueRoot.AddComponent<LightConditionClue>();
-        clue.puzzleId = "light_playtest_wall_keyhole";
         clue.playerCamera = camera;
         clue.playerController = controller;
-        clue.requiredLights = new[] { red.leverLight, blue.leverLight };
-        clue.forbiddenLights = new[] { green.leverLight };
+        clue.requiredLights = new Light[2];
+        clue.forbiddenLights = new Light[1];
         clue.writing = writing;
         clue.writingTarget = writingTarget;
         clue.writingGlow = glow;
         clue.keyholeTarget = keyholeTarget;
         UnityEventTools.AddBoolPersistentListener(clue.onKeyholeClicked, feedback.SetActive, true);
         clueRoot.SetActive(true);
-
-        EditorSceneManager.MarkSceneDirty(scene);
-        Selection.activeGameObject = clueRoot;
+        return clue;
     }
 
     private static PuzzleSwitch MakeSwitch(string label, Color color, float x,
         SwitchPanelInteract panel, TMP_FontAsset font, Material metal)
     {
-        var part = Shape(label + " Switch", panel.transform, new Vector3(x, 0f, -0.10f),
-            new Vector3(0.25f, 0.21f, 0.12f), metal);
+        var part = new GameObject(label + " Switch");
+        part.transform.SetParent(panel.transform, false);
+        part.transform.localPosition = new Vector3(x, 0f, -0.10f);
+        Shape("Base", part.transform, Vector3.zero, new Vector3(0.25f, 0.21f, 0.12f), metal);
         var toggle = part.AddComponent<PuzzleSwitch>();
         toggle.playerCamera = panel.playerCamera;
         toggle.leverOnColor = color;
+        toggle.leverUpAngle = 315f;
+        toggle.leverDownAngle = 405f;
+
+        var bracket = new GameObject("Hinge Axis").transform;
+        bracket.SetParent(part.transform, false);
+        bracket.localPosition = new Vector3(0f, 0f, -0.08f);
+        bracket.localRotation = Quaternion.Euler(0f, 0f, 90f);
+        var handle = new GameObject("Lever Handle").transform;
+        handle.SetParent(bracket, false);
+        Shape("Lever", handle, new Vector3(0f, 0f, -0.065f),
+            new Vector3(0.06f, 0.085f, 0.15f), metal);
+        toggle.leverHandle = handle;
 
         var lamp = new GameObject(label + " Circuit").AddComponent<Light>();
         lamp.transform.SetParent(panel.transform, false);

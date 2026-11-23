@@ -6,12 +6,30 @@ using UnityEngine.InputSystem;
 [DisallowMultipleComponent]
 public sealed class LightConditionClue : MonoBehaviour
 {
+    [System.Serializable]
+    public struct LightColorCondition
+    {
+        public Light light;
+        public Color color;
+
+        public bool Matches()
+        {
+            const float tolerance = 0.02f;
+            var current = light.color;
+            return IsLit(light) && Mathf.Abs(current.r - color.r) <= tolerance &&
+                Mathf.Abs(current.g - color.g) <= tolerance &&
+                Mathf.Abs(current.b - color.b) <= tolerance;
+        }
+    }
+
     public string puzzleId = "cell_wall_keyhole";
     public Camera playerCamera;
     public FirstPersonController playerController;
     [Min(0.1f)] public float interactDistance = 3f;
     public Light[] requiredLights = System.Array.Empty<Light>();
     public Light[] forbiddenLights = System.Array.Empty<Light>();
+    public LightColorCondition[] requiredColors = System.Array.Empty<LightColorCondition>();
+    public LightColorCondition[] forbiddenColors = System.Array.Empty<LightColorCondition>();
     public TMP_Text writing;
     public Collider writingTarget;
     public Collider keyholeTarget;
@@ -76,7 +94,7 @@ public sealed class LightConditionClue : MonoBehaviour
 
         ApplyVisibility();
         var target = discovered ? keyholeTarget : writingTarget;
-        if (!target.gameObject.activeInHierarchy || !CanInteract() ||
+        if (!target.gameObject.activeInHierarchy || !FirstPersonController.AllowsWorldPuzzleInput(playerController) ||
             Mouse.current?.leftButton.wasPressedThisFrame != true)
             return;
 
@@ -140,17 +158,16 @@ public sealed class LightConditionClue : MonoBehaviour
         foreach (var light in forbiddenLights)
             if (light == null || IsLit(light)) return false;
 
+        foreach (var condition in requiredColors)
+            if (condition.light == null || !condition.Matches()) return false;
+
+        foreach (var condition in forbiddenColors)
+            if (condition.light == null || condition.Matches()) return false;
+
         return true;
     }
 
     private static bool IsLit(Light light) => light.isActiveAndEnabled && light.intensity > 0f;
-
-    private bool CanInteract() =>
-        (playerController == null || (playerController.isActiveAndEnabled && !playerController.MovementLocked)) &&
-        (GameStateManager.Instance == null || GameStateManager.Instance.CurrentState == GameState.Exploration) &&
-        (SettingsUI.Instance == null || !SettingsUI.Instance.IsOpen) &&
-        (GameManager.Instance == null || !GameManager.Instance.IsShopOpen) &&
-        RadioInteractable.Active == null;
 
     [ContextMenu("Clear Saved Clue Discovery")]
     private void ClearSavedDiscovery()
