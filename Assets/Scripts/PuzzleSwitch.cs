@@ -76,8 +76,6 @@ public class PuzzleSwitch : MonoBehaviour
     {
         if (_isSolved || !_isInteractable) return;
 
-        Debug.Log($"[PuzzleSwitch] {gameObject.name} is interactable and listening");
-
         var mouse = Mouse.current;
         if (mouse == null) return;
 
