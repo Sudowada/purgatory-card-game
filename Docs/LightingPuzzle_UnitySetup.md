@@ -1,4 +1,17 @@
-# Two-rocker wall puzzle
+# Lighting puzzles
+
+## Wire four installed switches in a cell
+
+1. Open the cell scene. Put an empty, unit-scale anchor at about eye height on the inside of the clue wall. Point its local negative Z into the room.
+2. Open **Tools → Purgatory → Wire Lighting Puzzle**. Assign the first-person camera, the wall anchor, and the four imported model roots and four distinct active room Light objects. Use a 3D forward renderer on the cell camera so the lights illuminate the wall.
+3. Use **Red**, **Blue**, **Green/Yellow**, and **Purple/Orange** for fixture slots 1–4. The importer identifies the left selector as `Light_Color` and the power paddle as `OnOff`. A single model may use either mesh name for its lone power paddle. Choose the model roots without legacy switch input.
+4. Click **Wire Switches and Wall Clue** and save the scene. If a Light Sequence Panel is already installed, use **Add Wall Clue** to keep its current configuration. A configured reward door is optional. Without one, sequence completion is visible in the Console.
+
+The default activation order is **red → green → purple → blue**. Only power-on inputs enter the sequence. On the double fixtures, the left rocker sets the lamp's color and the right rocker switches power. A wrong light or wrong color resets the step counter. The player can turn off the lamps to restart from a clean state.
+
+The independent wall clue needs red and blue on and both double fixtures off. Click the writing to flash it and reveal a keyhole. The keyhole stays visible after the lights go off and after a reload. Clicking it displays **A key is needed** and exposes an Inspector event for the future lamp key.
+
+To playtest, first try blue out of order, then reset the switches and enter the correct sequence. For the wall clue, check red alone, blue alone, red and blue together, and red and blue with an extra light. Discover the keyhole, switch both lights off, and reload the scene to check persistence.
 
 ## Play the sample
 

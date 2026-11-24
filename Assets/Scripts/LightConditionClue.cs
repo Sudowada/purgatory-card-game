@@ -4,6 +4,7 @@ using UnityEngine.Events;
 using UnityEngine.InputSystem;
 
 [DisallowMultipleComponent]
+[DefaultExecutionOrder(1000)]
 public sealed class LightConditionClue : MonoBehaviour
 {
     [System.Serializable]
@@ -99,13 +100,13 @@ public sealed class LightConditionClue : MonoBehaviour
         if (!target.gameObject.activeInHierarchy || !FirstPersonController.AllowsWorldPuzzleInput(playerController))
             return;
 
-        ScreenReticle.Instance?.ShowInteractionHint();
-        if (Mouse.current?.leftButton.wasPressedThisFrame != true) return;
-
         var ray = playerCamera.ViewportPointToRay(new Vector3(0.5f, 0.5f));
         if (!Physics.Raycast(ray, out var hit, interactDistance,
                 Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore) || hit.collider != target)
             return;
+
+        ScreenReticle.Instance?.ShowInteractionHint();
+        if (Mouse.current?.leftButton.wasPressedThisFrame != true) return;
 
         if (discovered)
         {
