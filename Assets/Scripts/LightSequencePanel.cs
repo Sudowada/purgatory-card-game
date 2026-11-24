@@ -85,6 +85,8 @@ public sealed class LightSequencePanel : MonoBehaviour
 
     [Header("Sequence Feedback")]
     public AudioSource feedbackSource;
+    public AudioClip powerRockerClick;
+    public AudioClip colorSelectorClick;
     public AudioClip correctStepClip;
     public AudioClip wrongInputClip;
     public AudioClip solvedClip;
@@ -123,6 +125,7 @@ public sealed class LightSequencePanel : MonoBehaviour
 
             if (power)
             {
+                PlayClip(powerRockerClick);
                 fixture.powered = !fixture.powered;
                 fixture.power.Pose(fixture.powered ? -angle : angle);
                 fixture.Refresh();
@@ -130,6 +133,7 @@ public sealed class LightSequencePanel : MonoBehaviour
             }
             else
             {
+                PlayClip(colorSelectorClick);
                 fixture.secondary = !fixture.secondary;
                 fixture.selector.Pose(fixture.secondary ? -angle : angle);
                 fixture.Refresh();
@@ -141,6 +145,11 @@ public sealed class LightSequencePanel : MonoBehaviour
     private void PlayFeedback(AudioClip clip, Color tint, float duration)
     {
         ScreenReticle.Instance?.Pulse(tint, duration);
+        PlayClip(clip);
+    }
+
+    private void PlayClip(AudioClip clip)
+    {
         if (clip != null && feedbackSource != null) feedbackSource.PlayOneShot(clip);
     }
 
