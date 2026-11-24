@@ -50,6 +50,7 @@ public sealed class PurgatoryMixedLightSetup : EditorWindow
         {
             EditorGUILayout.HelpBox("The active scene already has a light sequence. You can add the red-and-blue clue to it.", MessageType.Info);
             if (GUILayout.Button("Apply First Puzzle Answer")) ApplyFirstAnswer(existing);
+            if (GUILayout.Button("Add Puzzle Sounds")) AddPuzzleSounds(existing);
             if (GUILayout.Button("Add Wall Clue")) PurgatoryWallClueSetup.Add(existing, clueAnchor);
             return;
         }
@@ -138,12 +139,37 @@ public sealed class PurgatoryMixedLightSetup : EditorWindow
         panel.onWrongInput = new UnityEngine.Events.UnityEvent();
         panel.onSequenceSolved = new UnityEngine.Events.UnityEvent();
         if (door != null) UnityEventTools.AddPersistentListener(panel.onSequenceSolved, door.OnPuzzleSolved);
+        AddPuzzleSounds(panel);
         PurgatoryWallClueSetup.Add(panel, clueAnchor);
         EditorUtility.SetDirty(panel);
         EditorSceneManager.MarkSceneDirty(scene);
         Undo.CollapseUndoOperations(undo);
         Selection.activeGameObject = root;
     }
+
+    private static void AddPuzzleSounds(LightSequencePanel panel)
+    {
+        if (EditorApplication.isPlayingOrWillChangePlaymode) return;
+
+        Undo.RecordObject(panel, "Add Lighting Puzzle Sounds");
+        if (panel.feedbackSource == null)
+        {
+            var source = Undo.AddComponent<AudioSource>(panel.gameObject);
+            source.playOnAwake = false;
+            source.volume = 0.45f;
+            panel.feedbackSource = source;
+        }
+
+        panel.correctStepClip ??= LoadClip("b9c0e3c832ab39a49b4b03e9c9b6b5d2");
+        panel.wrongInputClip ??= LoadClip("ae705af900de39e4ca0b540302a4d513");
+        panel.solvedClip ??= LoadClip("45a3975eea2b2134ca95290ca7d40aa7");
+        PrefabUtility.RecordPrefabInstancePropertyModifications(panel);
+        EditorUtility.SetDirty(panel);
+        EditorSceneManager.MarkSceneDirty(panel.gameObject.scene);
+    }
+
+    private static AudioClip LoadClip(string guid) =>
+        AssetDatabase.LoadAssetAtPath<AudioClip>(AssetDatabase.GUIDToAssetPath(guid));
 
     private static Transform FindPaddle(Transform model, string name) =>
         model.GetComponentsInChildren<MeshFilter>(true)

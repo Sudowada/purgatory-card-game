@@ -11,6 +11,8 @@ The default activation order is **red → yellow → magenta → blue**. Only po
 
 The independent wall clue needs red and blue on and both double fixtures off. Click the writing to flash it and reveal a keyhole. The keyhole stays visible after the lights go off and after a reload. Clicking it displays **A key is needed** and exposes an Inspector event for the future lamp key.
 
+Correct steps, wrong inputs, and completion briefly pulse the crosshair in different colors. In an existing scene, choose **Add Puzzle Sounds** in the same window to assign the three existing sound effects, then save the scene. You can replace the clips or adjust the volume in the Inspector.
+
 To playtest, first try blue out of order, then reset the switches and enter the correct sequence. For the wall clue, check red alone, blue alone, red and blue together, and red and blue with an extra light. Discover the keyhole, switch both lights off, and reload the scene to check persistence.
 
 ## Play the sample

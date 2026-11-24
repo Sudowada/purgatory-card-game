@@ -83,6 +83,12 @@ public sealed class LightSequencePanel : MonoBehaviour
     public UnityEvent onWrongInput;
     public UnityEvent onSequenceSolved;
 
+    [Header("Sequence Feedback")]
+    public AudioSource feedbackSource;
+    public AudioClip correctStepClip;
+    public AudioClip wrongInputClip;
+    public AudioClip solvedClip;
+
     public int Progress { get; private set; }
     public bool IsSolved { get; private set; }
 
@@ -132,6 +138,12 @@ public sealed class LightSequencePanel : MonoBehaviour
         }
     }
 
+    private void PlayFeedback(AudioClip clip, Color tint, float duration)
+    {
+        ScreenReticle.Instance?.Pulse(tint, duration);
+        if (clip != null && feedbackSource != null) feedbackSource.PlayOneShot(clip);
+    }
+
     private void SubmitActivation(int fixtureNumber, bool secondary)
     {
         if (IsSolved || sequence.Length == 0) return;
@@ -139,6 +151,7 @@ public sealed class LightSequencePanel : MonoBehaviour
         if (expected.fixtureNumber != fixtureNumber || expected.secondary != secondary)
         {
             Progress = 0;
+            PlayFeedback(wrongInputClip, new Color(1f, 0.47f, 0.38f), 0.24f);
             onWrongInput?.Invoke();
             Debug.Log("[LightSequencePanel] Wrong light activation. Sequence reset.", this);
             return;
@@ -146,9 +159,14 @@ public sealed class LightSequencePanel : MonoBehaviour
 
         Progress++;
         Debug.Log($"[LightSequencePanel] {Progress}/{sequence.Length} correct.", this);
-        if (Progress != sequence.Length) return;
+        if (Progress != sequence.Length)
+        {
+            PlayFeedback(correctStepClip, new Color(0.77f, 0.90f, 0.73f), 0.18f);
+            return;
+        }
 
         IsSolved = true;
+        PlayFeedback(solvedClip, new Color(1f, 0.83f, 0.48f), 0.55f);
         Debug.Log("[LightSequencePanel] Sequence solved.", this);
         onSequenceSolved?.Invoke();
     }
