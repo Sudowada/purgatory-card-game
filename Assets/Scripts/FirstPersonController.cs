@@ -17,6 +17,14 @@ public class FirstPersonController : MonoBehaviour
     // Allow environmental interactions (such as the toilet) to keep mouse
     // look active while preventing walking. Other gameplay is unchanged.
     public bool MovementLocked { get; set; }
+    internal bool LookLocked { get; set; }
+
+    internal static bool AllowsWorldPuzzleInput(FirstPersonController controller) =>
+        (controller == null || (controller.isActiveAndEnabled && !controller.MovementLocked)) &&
+        (GameStateManager.Instance == null || GameStateManager.Instance.CurrentState == GameState.Exploration) &&
+        (SettingsUI.Instance == null || !SettingsUI.Instance.IsOpen) &&
+        (GameManager.Instance == null || !GameManager.Instance.IsShopOpen) &&
+        RadioInteractable.Active == null;
 
     // Temporary camera pitch added by use animations without overriding the
     // player's look angle. This avoids snapping the view when the animation ends.
@@ -33,7 +41,7 @@ public class FirstPersonController : MonoBehaviour
         if (mouse == null || kb == null) return;
 
         // Mouse look
-        Vector2 mouseDelta = mouse.delta.ReadValue() * mouseSensitivity * 0.1f;
+        Vector2 mouseDelta = LookLocked ? Vector2.zero : mouse.delta.ReadValue() * mouseSensitivity * 0.1f;
         _xRotation -= mouseDelta.y;
         _xRotation  = Mathf.Clamp(_xRotation, -80f, 80f);
         cameraTransform.localRotation = Quaternion.Euler(

@@ -12,6 +12,7 @@ public class PuzzleSwitch : MonoBehaviour
     [Header("References")]
     public Camera playerCamera;
     public float interactDistance = 3f;
+    public bool clickOnly;
 
     [Header("Lever Handle")]
     public Transform leverHandle;
@@ -62,21 +63,38 @@ public class PuzzleSwitch : MonoBehaviour
     private Coroutine _snapCoroutine;
 
     private float _currentAngle;
+    private bool _useWorldInteraction;
+    private FirstPersonController _worldController;
+    private bool _worldPress;
+    private bool _worldDrag;
+    private bool _previousLookLock;
+    private float _worldDragDelta;
+    private float _worldRestAngle;
 
     private const float MiddleThreshold = 0.15f;
 
     void Start()
     {
-        _currentAngle = leverUpAngle;
+        if (!_useWorldInteraction)
+            _currentAngle = leverUpAngle;
+        else if (_snapCoroutine == null)
+        {
+            if (switchType == SwitchType.Binary) IsOn = _binaryState == 1;
+            _currentAngle = RestAngle();
+        }
         ApplyHandleAngle(_currentAngle);
         UpdateVisuals();
     }
 
     void Update()
     {
-        if (_isSolved || !_isInteractable) return;
+        if (_useWorldInteraction)
+        {
+            UpdateWorldInteraction();
+            return;
+        }
 
-        Debug.Log($"[PuzzleSwitch] {gameObject.name} is interactable and listening");
+        if (_isSolved || !_isInteractable) return;
 
         var mouse = Mouse.current;
         if (mouse == null) return;
@@ -119,6 +137,116 @@ public class PuzzleSwitch : MonoBehaviour
         if (hit.transform != transform && !hit.transform.IsChildOf(transform)) return;
 
         StartCoroutine(ClickOrDrag());
+    }
+
+    public void UseWorldInteraction(Camera camera, FirstPersonController controller)
+    {
+        _useWorldInteraction = true;
+        if (camera != null) playerCamera = camera;
+        _worldController = controller;
+        ScreenReticle.EnsureExists();
+    }
+
+    void UpdateWorldInteraction()
+    {
+        var mouse = Mouse.current;
+        if (_isSolved || playerCamera == null || mouse == null ||
+            !FirstPersonController.AllowsWorldPuzzleInput(_worldController))
+        {
+            CancelWorldPress();
+            return;
+        }
+
+        if (!_worldPress)
+        {
+            var ray = playerCamera.ViewportPointToRay(new Vector3(0.5f, 0.5f));
+            if (!Physics.Raycast(ray, out var hit, interactDistance,
+                    Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore) ||
+                hit.collider.GetComponentInParent<PuzzleSwitch>() != this)
+                return;
+
+            ScreenReticle.Instance?.ShowInteractionHint();
+            if (!mouse.leftButton.wasPressedThisFrame) return;
+            if (clickOnly)
+            {
+                OnClicked();
+                return;
+            }
+
+            _worldPress = true;
+            _worldDragDelta = 0f;
+            if (_worldController != null)
+            {
+                _previousLookLock = _worldController.LookLocked;
+                _worldController.LookLocked = true;
+            }
+            return;
+        }
+
+        if (!mouse.leftButton.isPressed)
+        {
+            bool dragged = _worldDrag;
+            ReleaseWorldPress();
+            if (dragged) SnapToNearestState();
+            else OnClicked();
+            return;
+        }
+
+        float delta = mouse.delta.ReadValue().y;
+        if (!_worldDrag)
+        {
+            _worldDragDelta += delta;
+            if (Mathf.Abs(_worldDragDelta) < 5f) return;
+
+            _worldDrag = true;
+            _worldRestAngle = RestAngle();
+            if (_snapCoroutine != null)
+            {
+                StopCoroutine(_snapCoroutine);
+                _snapCoroutine = null;
+                _isAnimating = false;
+            }
+            delta = _worldDragDelta;
+        }
+
+        _currentAngle = Mathf.Clamp(_currentAngle - delta * dragSensitivity,
+            Mathf.Min(leverUpAngle, leverDownAngle), Mathf.Max(leverUpAngle, leverDownAngle));
+        ApplyHandleAngle(_currentAngle);
+    }
+
+    float RestAngle()
+    {
+        if (switchType == SwitchType.Binary)
+            return Mathf.Lerp(leverDownAngle, leverUpAngle, (_binaryState + 1) * 0.5f);
+        if (_inMiddle) return Mathf.Lerp(leverUpAngle, leverDownAngle, 0.5f);
+        return IsOn ? leverUpAngle : leverDownAngle;
+    }
+
+    void OnDisable() => CancelWorldPress();
+
+    void OnApplicationFocus(bool hasFocus)
+    {
+        if (!hasFocus) CancelWorldPress();
+    }
+
+    void ReleaseWorldPress()
+    {
+        if (_worldController != null) _worldController.LookLocked = _previousLookLock;
+        _worldPress = false;
+        _worldDrag = false;
+    }
+
+    void CancelWorldPress()
+    {
+        if (!_worldPress) return;
+
+        if (_worldDrag)
+        {
+            _currentAngle = _worldRestAngle;
+            ApplyHandleAngle(_currentAngle);
+            UpdateVisuals();
+        }
+        ReleaseWorldPress();
     }
 
     IEnumerator ClickOrDrag()

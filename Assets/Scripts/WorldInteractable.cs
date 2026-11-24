@@ -21,9 +21,7 @@ using UnityEngine.InputSystem;
 ///      looking directly at it. Matches the reference composition: icon
 ///      above, action-button prompt below, both attached to the object.
 ///
-/// The separate ScreenReticle (small always-on aiming dot at screen
-/// center) is unrelated to this — it exists purely so the player knows
-/// exactly where they're looking, independent of what's interactable.
+/// The center reticle brightens when an interaction is in range.
 ///
 /// USAGE: don't put this on objects directly for gameplay — subclass it
 /// (see TableInteractable.cs for an example) and override OnInteract()
@@ -87,6 +85,7 @@ public abstract class WorldInteractable : MonoBehaviour
         }
 
         CheckLook();
+        if (_isLooking) ScreenReticle.Instance?.ShowInteractionHint();
         UpdateIcon();
 
         var kb = Keyboard.current;
@@ -330,10 +329,9 @@ public abstract class WorldInteractable : MonoBehaviour
 }
 
 /// <summary>
-/// A small, always-visible aiming dot fixed at screen center. Purely for
-/// letting the player know exactly where they're looking — independent
-/// of whether anything interactable is in view. No text, minimal reaction.
+/// Center aiming dot with a quiet highlight over usable targets.
 /// </summary>
+[DefaultExecutionOrder(20000)]
 public class ScreenReticle : MonoBehaviour
 {
     public static ScreenReticle Instance { get; private set; }
@@ -341,6 +339,18 @@ public class ScreenReticle : MonoBehaviour
     [Header("Dot")]
     [SerializeField] private float dotSize = 4f;
     [SerializeField] private Color dotColor = new Color(1f, 1f, 1f, 0.45f);
+    [SerializeField] private Color focusedColor = new Color(1f, 0.92f, 0.76f, 1f);
+    private Image dotImage;
+    private int hintFrame = -1;
+
+    public void ShowInteractionHint() => hintFrame = Time.frameCount;
+
+    private void LateUpdate()
+    {
+        bool focused = hintFrame == Time.frameCount;
+        dotImage.color = focused ? focusedColor : dotColor;
+        dotImage.rectTransform.sizeDelta = Vector2.one * dotSize * (focused ? 1.75f : 1f);
+    }
 
     public static void EnsureExists()
     {
@@ -375,7 +385,7 @@ public class ScreenReticle : MonoBehaviour
         var dotRT = dotGO.AddComponent<RectTransform>();
         dotRT.anchorMin = dotRT.anchorMax = dotRT.pivot = new Vector2(0.5f, 0.5f);
         dotRT.sizeDelta = new Vector2(dotSize, dotSize);
-        var dotImage = dotGO.AddComponent<Image>();
+        dotImage = dotGO.AddComponent<Image>();
         dotImage.color = dotColor;
         dotImage.raycastTarget = false;
     }

@@ -25,6 +25,8 @@ public class SwitchPanelInteract : MonoBehaviour
 
     [Header("Switches")]
     public PuzzleSwitch[] switches = new PuzzleSwitch[4];
+    [Tooltip("Click and drag switches directly using the exploration crosshair.")]
+    public bool useWorldInteraction = true;
 
     [Header("Parallax Sway (locked mode)")]
     public float parallaxStrength  = 0.004f;
@@ -65,8 +67,18 @@ public class SwitchPanelInteract : MonoBehaviour
     // Re-lock interpolation
     private Quaternion _reLockStartRot;
 
+    void Awake()
+    {
+        if (!useWorldInteraction) return;
+
+        foreach (var sw in switches)
+            if (sw != null) sw.UseWorldInteraction(playerCamera, playerController);
+    }
+
     void Update()
     {
+        if (useWorldInteraction) return;
+
         var kb = Keyboard.current;
         if (kb == null) return;
 
