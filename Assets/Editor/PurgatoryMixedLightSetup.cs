@@ -160,9 +160,11 @@ public sealed class PurgatoryMixedLightSetup : EditorWindow
             panel.feedbackSource = source;
         }
 
-        var breakerClick = LoadClip("7f21770079d9c3843a76c7734c06987e");
+        var breakerClick = LoadClip("85b582cbd6b44b43b17de9a2512f7338");
+        var previousBreakerClick = LoadClip("7f21770079d9c3843a76c7734c06987e");
         var previousWalkmanClick = LoadClip("338107c820f50f24d90e6f0a8e7d0c35");
-        if (breakerClick != null && (panel.rockerClick == null || panel.rockerClick == previousWalkmanClick))
+        if (breakerClick != null && (panel.rockerClick == null ||
+            panel.rockerClick == previousWalkmanClick || panel.rockerClick == previousBreakerClick))
             panel.rockerClick = breakerClick;
         panel.correctStepClip ??= LoadClip("b9c0e3c832ab39a49b4b03e9c9b6b5d2");
         panel.wrongInputClip ??= LoadClip("ae705af900de39e4ca0b540302a4d513");
