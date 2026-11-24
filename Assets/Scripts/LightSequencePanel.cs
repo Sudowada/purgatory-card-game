@@ -93,7 +93,7 @@ public sealed class LightSequencePanel : MonoBehaviour
         {
             fixture.power.Initialize();
             fixture.selector.Initialize();
-            fixture.power.Pose(-angle);
+            fixture.power.Pose(angle);
             fixture.selector.Pose(angle);
             fixture.Refresh();
         }
@@ -118,7 +118,7 @@ public sealed class LightSequencePanel : MonoBehaviour
             if (power)
             {
                 fixture.powered = !fixture.powered;
-                fixture.power.Pose(fixture.powered ? angle : -angle);
+                fixture.power.Pose(fixture.powered ? -angle : angle);
                 fixture.Refresh();
                 if (fixture.powered) SubmitActivation(i + 1, fixture.secondary);
             }
