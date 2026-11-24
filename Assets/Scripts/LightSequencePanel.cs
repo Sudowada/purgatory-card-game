@@ -2,6 +2,7 @@ using System;
 using UnityEngine;
 using UnityEngine.Events;
 using UnityEngine.InputSystem;
+using UnityEngine.Serialization;
 
 [DisallowMultipleComponent]
 public sealed class LightSequencePanel : MonoBehaviour
@@ -85,8 +86,8 @@ public sealed class LightSequencePanel : MonoBehaviour
 
     [Header("Sequence Feedback")]
     public AudioSource feedbackSource;
-    public AudioClip powerRockerClick;
-    public AudioClip colorSelectorClick;
+    [SerializeField, HideInInspector] private AudioClip powerRockerClick;
+    [FormerlySerializedAs("colorSelectorClick")] public AudioClip rockerClick;
     public AudioClip correctStepClip;
     public AudioClip wrongInputClip;
     public AudioClip solvedClip;
@@ -125,7 +126,7 @@ public sealed class LightSequencePanel : MonoBehaviour
 
             if (power)
             {
-                PlayClip(powerRockerClick);
+                PlayRockerClick();
                 fixture.powered = !fixture.powered;
                 fixture.power.Pose(fixture.powered ? -angle : angle);
                 fixture.Refresh();
@@ -133,7 +134,7 @@ public sealed class LightSequencePanel : MonoBehaviour
             }
             else
             {
-                PlayClip(colorSelectorClick);
+                PlayRockerClick();
                 fixture.secondary = !fixture.secondary;
                 fixture.selector.Pose(fixture.secondary ? -angle : angle);
                 fixture.Refresh();
@@ -147,6 +148,8 @@ public sealed class LightSequencePanel : MonoBehaviour
         ScreenReticle.Instance?.Pulse(tint, duration);
         PlayClip(clip);
     }
+
+    private void PlayRockerClick() => PlayClip(rockerClick != null ? rockerClick : powerRockerClick);
 
     private void PlayClip(AudioClip clip)
     {

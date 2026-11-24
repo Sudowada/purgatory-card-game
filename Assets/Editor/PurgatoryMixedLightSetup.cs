@@ -160,10 +160,8 @@ public sealed class PurgatoryMixedLightSetup : EditorWindow
             panel.feedbackSource = source;
         }
 
-        if (panel.powerRockerClick == null)
-            panel.powerRockerClick = LoadClip("7f21770079d9c3843a76c7734c06987e");
-        if (panel.colorSelectorClick == null)
-            panel.colorSelectorClick = LoadClip("338107c820f50f24d90e6f0a8e7d0c35");
+        if (panel.rockerClick == null)
+            panel.rockerClick = LoadClip("338107c820f50f24d90e6f0a8e7d0c35");
         panel.correctStepClip ??= LoadClip("b9c0e3c832ab39a49b4b03e9c9b6b5d2");
         panel.wrongInputClip ??= LoadClip("ae705af900de39e4ca0b540302a4d513");
         panel.solvedClip ??= LoadClip("45a3975eea2b2134ca95290ca7d40aa7");
