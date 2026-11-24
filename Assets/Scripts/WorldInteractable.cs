@@ -343,13 +343,26 @@ public class ScreenReticle : MonoBehaviour
     private Image dotImage;
     private int hintFrame = -1;
 
+    private Color pulseColor;
+    private float pulseEnd;
+    private float pulseDuration;
+
     public void ShowInteractionHint() => hintFrame = Time.frameCount;
+
+    public void Pulse(Color tint, float duration)
+    {
+        pulseColor = tint;
+        pulseDuration = Mathf.Max(0.01f, duration);
+        pulseEnd = Time.unscaledTime + pulseDuration;
+    }
 
     private void LateUpdate()
     {
         bool focused = hintFrame == Time.frameCount;
-        dotImage.color = focused ? focusedColor : dotColor;
-        dotImage.rectTransform.sizeDelta = Vector2.one * dotSize * (focused ? 1.75f : 1f);
+        float pulse = Mathf.Clamp01((pulseEnd - Time.unscaledTime) / Mathf.Max(0.01f, pulseDuration));
+        dotImage.color = Color.Lerp(focused ? focusedColor : dotColor, pulseColor, pulse);
+        dotImage.rectTransform.sizeDelta = Vector2.one * dotSize *
+            Mathf.Lerp(focused ? 1.75f : 1f, 2.7f, pulse);
     }
 
     public static void EnsureExists()
@@ -395,5 +408,6 @@ public class ScreenReticle : MonoBehaviour
     {
         var canvas = GetComponentInChildren<Canvas>();
         if (canvas != null) canvas.enabled = visible;
+        if (!visible) pulseEnd = 0f;
     }
 }

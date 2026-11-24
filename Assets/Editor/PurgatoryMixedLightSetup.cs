@@ -13,11 +13,11 @@ public sealed class PurgatoryMixedLightSetup : EditorWindow
     private PuzzleDoor door;
     private Transform clueAnchor;
 
-    private static readonly string[] Labels = { "1 Red", "2 Blue", "3 Green / Yellow", "4 Purple / Orange" };
+    private static readonly string[] Labels = { "1 Red", "2 Blue", "3 Green / Yellow", "4 Magenta / Orange" };
     private static readonly Color[] Primary =
     {
         new Color(0.86f, 0.078f, 0.235f), new Color(0.12f, 0.35f, 1f),
-        new Color(0.50f, 1f, 0f), new Color(0.58f, 0f, 0.83f)
+        new Color(0.50f, 1f, 0f), new Color(0.88f, 0.04f, 0.62f)
     };
     private static readonly Color[] Secondary =
     {
@@ -49,6 +49,8 @@ public sealed class PurgatoryMixedLightSetup : EditorWindow
         if (existing != null)
         {
             EditorGUILayout.HelpBox("The active scene already has a light sequence. You can add the red-and-blue clue to it.", MessageType.Info);
+            if (GUILayout.Button("Apply First Puzzle Answer")) ApplyFirstAnswer(existing);
+            if (GUILayout.Button("Add Puzzle Sounds")) AddPuzzleSounds(existing);
             if (GUILayout.Button("Add Wall Clue")) PurgatoryWallClueSetup.Add(existing, clueAnchor);
             return;
         }
@@ -133,16 +135,45 @@ public sealed class PurgatoryMixedLightSetup : EditorWindow
                 intensity = lights[i].intensity > 0f ? lights[i].intensity : 1.5f
             };
         }
-        panel.sequence = new[] { Step(1), Step(3), Step(4), Step(2) };
+        panel.sequence = FirstAnswer();
         panel.onWrongInput = new UnityEngine.Events.UnityEvent();
         panel.onSequenceSolved = new UnityEngine.Events.UnityEvent();
         if (door != null) UnityEventTools.AddPersistentListener(panel.onSequenceSolved, door.OnPuzzleSolved);
+        AddPuzzleSounds(panel);
         PurgatoryWallClueSetup.Add(panel, clueAnchor);
         EditorUtility.SetDirty(panel);
         EditorSceneManager.MarkSceneDirty(scene);
         Undo.CollapseUndoOperations(undo);
         Selection.activeGameObject = root;
     }
+
+    private static void AddPuzzleSounds(LightSequencePanel panel)
+    {
+        if (EditorApplication.isPlayingOrWillChangePlaymode) return;
+
+        Undo.RecordObject(panel, "Add Lighting Puzzle Sounds");
+        if (panel.feedbackSource == null)
+        {
+            var source = Undo.AddComponent<AudioSource>(panel.gameObject);
+            source.playOnAwake = false;
+            source.volume = 0.45f;
+            panel.feedbackSource = source;
+        }
+
+        if (panel.powerRockerClick == null)
+            panel.powerRockerClick = LoadClip("7f21770079d9c3843a76c7734c06987e");
+        if (panel.colorSelectorClick == null)
+            panel.colorSelectorClick = LoadClip("338107c820f50f24d90e6f0a8e7d0c35");
+        panel.correctStepClip ??= LoadClip("b9c0e3c832ab39a49b4b03e9c9b6b5d2");
+        panel.wrongInputClip ??= LoadClip("ae705af900de39e4ca0b540302a4d513");
+        panel.solvedClip ??= LoadClip("45a3975eea2b2134ca95290ca7d40aa7");
+        PrefabUtility.RecordPrefabInstancePropertyModifications(panel);
+        EditorUtility.SetDirty(panel);
+        EditorSceneManager.MarkSceneDirty(panel.gameObject.scene);
+    }
+
+    private static AudioClip LoadClip(string guid) =>
+        AssetDatabase.LoadAssetAtPath<AudioClip>(AssetDatabase.GUIDToAssetPath(guid));
 
     private static Transform FindPaddle(Transform model, string name) =>
         model.GetComponentsInChildren<MeshFilter>(true)
@@ -164,6 +195,29 @@ public sealed class PurgatoryMixedLightSetup : EditorWindow
         return new LightSequencePanel.Rocker { paddle = paddle, target = target, axisReference = model };
     }
 
-    private static LightSequencePanel.Step Step(int fixture) =>
-        new LightSequencePanel.Step { fixtureNumber = fixture };
+    private static LightSequencePanel.Step[] FirstAnswer() =>
+        new[] { Step(1), Step(3, secondary: true), Step(4), Step(2) };
+
+    private static void ApplyFirstAnswer(LightSequencePanel panel)
+    {
+        if (EditorApplication.isPlayingOrWillChangePlaymode) return;
+        if (panel.fixtures == null || panel.fixtures.Length != 4 ||
+            panel.fixtures[2]?.selector?.paddle == null || panel.fixtures[3]?.selector?.paddle == null)
+        {
+            EditorUtility.DisplayDialog("Lighting Puzzle", "The first answer needs four fixtures with color selectors on fixtures 3 and 4.", "OK");
+            return;
+        }
+
+        Undo.RecordObject(panel, "Apply First Light Puzzle Answer");
+        panel.fixtures[2].secondaryColor = Secondary[2];
+        panel.fixtures[3].primaryColor = Primary[3];
+        panel.sequence = FirstAnswer();
+        PrefabUtility.RecordPrefabInstancePropertyModifications(panel);
+        EditorUtility.SetDirty(panel);
+        EditorSceneManager.MarkSceneDirty(panel.gameObject.scene);
+        Selection.activeGameObject = panel.gameObject;
+    }
+
+    private static LightSequencePanel.Step Step(int fixture, bool secondary = false) =>
+        new LightSequencePanel.Step { fixtureNumber = fixture, secondary = secondary };
 }
